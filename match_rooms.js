@@ -98,6 +98,7 @@ window.roomsPage=function(){
  <div class="panel"><h3>Join with code</h3><input id="joinCode" placeholder="FP-ABC123"><button class="primary" onclick="joinRoomByCode()">Join room</button>
  <hr><h3>Open rooms</h3>${(roomState.rooms||[]).map(r=>`<div class="room-card"><div><b>${r.name}</b><div class="small">${r.game_mode} • ${r.max_players} max</div></div><button class="secondary" onclick="joinRoomByCodePrefill('${r.code}')">Join</button></div>`).join("")||"<p class='muted'>No rooms waiting.</p>"}</div></div>`;
 };
-window.joinRoomByCodePrefill=async code=>{
+
+window.joinRoomByCodePrefill=async function(code){
  document.querySelector("#joinCode").value=code; await joinRoomByCode();
 };
