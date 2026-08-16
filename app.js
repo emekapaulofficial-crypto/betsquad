@@ -15,7 +15,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 window.supabase = supabase;
 
 const need={GK:1,DEF:4,MID:4,ST:2};
-const state={page:"home",mode:"league",filter:"ALL",selected:[],user:null,round:null,dbPlayers:[],loadingPlayers:false};
+const state={page:"home",mode:"league",filter:"ALL",selected:[],user:null,round:null,dbPlayers:[],loadingPlayers:false,menuOpen:false};
 window.state = state;
 
 async function session(){
@@ -42,21 +42,22 @@ async function syncPlayers(){
   }
 }
 
-window.go=p=>{state.page=p;render()};
+window.go=p=>{state.page=p;state.menuOpen=false;render()};
+window.toggleMenu=()=>{state.menuOpen=!state.menuOpen;render()};
 window.start=async m=>{
-  state.mode=m;state.selected=[];state.page="builder";state.loadingPlayers=true;render();
+  state.mode=m;state.selected=[];state.page="builder";state.loadingPlayers=true;state.menuOpen=false;render();
   await syncPlayers();
   await loadDbPlayers();
   await loadRound();
   state.loadingPlayers=false;render();
 };
 window.filter=f=>{state.filter=f;render()};
-window.signOut=async()=>{await supabase.auth.signOut();state.user=null;state.selected=[];render()};
+window.signOut=async()=>{await supabase.auth.signOut();state.user=null;state.selected=[];state.menuOpen=false;render()};
 window.signIn=async()=>{
   const email=document.querySelector("#email").value.trim(), password=document.querySelector("#password").value;
   const {error}=await supabase.auth.signInWithPassword({email,password});
   if(error) return alert(error.message);
-  await session(); render();
+  await session(); state.menuOpen=false; render();
 };
 window.signUp=async()=>{
   const name=document.querySelector("#name").value.trim(), email=document.querySelector("#email").value.trim(), password=document.querySelector("#password").value;
@@ -91,19 +92,50 @@ window.submitTeam=async()=>{
   state.page="leaderboard";render();
 };
 
-function nav(){return `<header class="top"><div class="brand">Football<span>Points</span></div>
-<nav class="nav">${["home","rooms","rounds","friendly","leaderboard"].map(p=>`<button class="${state.page===p?"active":""}" onclick="go('${p}')">${p[0].toUpperCase()+p.slice(1)}</button>`).join("")}</nav>
-${state.user?`<button class="secondary" onclick="signOut()">Sign out</button>`:`<button class="secondary" onclick="go('auth')">Login</button>`}</header>`}
+function nav(){
+  const links=["home","rooms","rounds","friendly","leaderboard"];
+  return `<header class="top">
+<div class="brand">Football<span>Points</span></div>
+<nav class="nav">${links.map(p=>`<button class="${state.page===p?"active":""}" onclick="go('${p}')">${p[0].toUpperCase()+p.slice(1)}</button>`).join("")}</nav>
+<div class="top-right">
+${state.user?`<button class="secondary desktop-only" onclick="signOut()">Sign out</button>`:`<button class="secondary desktop-only" onclick="go('auth')">Login</button>`}
+<button class="menu-btn" onclick="toggleMenu()" aria-label="Menu">${state.menuOpen?"✕":"☰"}</button>
+</div>
+</header>
+<div class="mobile-menu ${state.menuOpen?"open":""}">
+${links.map(p=>`<button class="${state.page===p?"active":""}" onclick="go('${p}')">${p[0].toUpperCase()+p.slice(1)}</button>`).join("")}
+${state.user?`<button onclick="signOut()">Sign out</button>`:`<button onclick="go('auth')">Login</button>`}
+</div>`;
+}
 
 function auth(){return `<div class="two"><div class="panel"><span class="badge">ACCOUNT</span><h2>Login / Register</h2>
 <div class="form"><input id="name" placeholder="Name for registration"><input id="email" type="email" placeholder="Email"><input id="password" type="password" placeholder="Password">
 <div class="actions"><button class="primary" onclick="signUp()">Create account</button><button class="secondary" onclick="signIn()">Sign in</button></div></div></div>
 <div class="panel"><h3>Database account</h3><p class="muted">Your submitted team is associated with your authenticated user ID.</p></div></div>`}
 
-function home(){return `<section class="hero"><div class="panel"><span class="badge">V3 • SUPABASE READY</span>
-<h1>Build your team.<br><span class="green">Save it to the database.</span></h1><p class="muted">Users can register, join a shared round and submit their 4-4-2 team to Supabase.</p>
+function home(){return `<section class="hero"><div class="panel"><span class="badge">FREE TO PLAY • POINTS ONLY</span>
+<h1>Pick real players.<br><span class="green">Score points from real matches.</span></h1>
+<p class="muted">No money changes hands here — this is a free fantasy-style game. You build an 11-player team using real footballers, and when they play their real matches, their actual performance (goals, assists, clean sheets) earns you points automatically.</p>
 <div class="actions">${state.user?`<button class="primary" onclick="start('league')">Join League</button>`:`<button class="primary" onclick="go('auth')">Create account</button>`}<button class="secondary" onclick="start('friendly')">Friendly</button></div></div>
-<div class="panel"><h3>Scoring</h3>${["Goal|+5","Assist|+3","Clean sheet|+4","Team win|+2","Yellow card|-1"].map(x=>{const [a,b]=x.split("|");return`<div class="row"><span>${a}</span><b>${b}</b></div>`}).join("")}</div></section>`}
+<div class="panel"><h3>Scoring</h3><p class="muted" style="margin-top:0">Points update automatically once real matches are played.</p>${["Goal|+5","Assist|+3","Clean sheet|+4","Team win|+2","Yellow card|-1"].map(x=>{const [a,b]=x.split("|");return`<div class="row"><span>${a}</span><b>${b}</b></div>`}).join("")}</div></section>
+
+<div class="section"><h2>How it works</h2></div>
+<div class="grid">
+<div class="card"><span class="badge">STEP 1</span><h3>Create an account</h3><p class="muted">Sign up with your name, email and a password. This is what saves your team and points to the database.</p></div>
+<div class="card"><span class="badge">STEP 2</span><h3>Build your 11</h3><p class="muted">Pick 1 goalkeeper, 4 defenders, 4 midfielders and 2 strikers from real Premier League players — a valid 4-4-2 formation.</p></div>
+<div class="card"><span class="badge">STEP 3</span><h3>Save your team</h3><p class="muted">Once all 11 slots are filled, save your team. It's now entered into the current open round.</p></div>
+<div class="card"><span class="badge">STEP 4</span><h3>Real matches happen</h3><p class="muted">As the real fixtures are played, your picked players' real actions (goals, assists, clean sheets) earn points using the scoring table.</p></div>
+<div class="card"><span class="badge">STEP 5</span><h3>Points add up</h3><p class="muted">All 11 players' points are added together automatically to give your total score for the round.</p></div>
+<div class="card"><span class="badge">STEP 6</span><h3>Check the leaderboard</h3><p class="muted">See where you rank against everyone else who entered the same round, ordered by total points.</p></div>
+</div>
+
+<div class="section"><h2>The sections, explained</h2></div>
+<div class="grid">
+<div class="card"><h3>Home</h3><p class="muted">This page — an overview of the game and how it works.</p></div>
+<div class="card"><h3>Rounds</h3><p class="muted">Shows the current open round. Multiple players can all enter the same round and compete against each other.</p></div>
+<div class="card"><h3>Friendly</h3><p class="muted">A smaller, head-to-head style team-building mode, separate from the shared round.</p></div>
+<div class="card"><h3>Leaderboard</h3><p class="muted">Ranks every entrant in the current round by total points, highest first.</p></div>
+</div>`}
 
 function rounds(){return `<div class="section"><h2>Rounds</h2></div><div class="card"><span class="badge">${state.round?.status?.toUpperCase()||"NO OPEN ROUND"}</span>
 <h3>${state.round?.name||"No open round"}</h3><p class="muted">${state.round?"Multiple users can enter this same shared round.":"Create an OPEN round in Supabase first."}</p><button class="primary" onclick="start('league')">Build Team</button></div>`}
@@ -111,6 +143,7 @@ function rounds(){return `<div class="section"><h2>Rounds</h2></div><div class="
 function friendly(){return `<div class="section"><h2>Friendly</h2></div><div class="two"><div class="card"><span class="badge">1 VS 1</span><h3>Challenge foundation</h3><p class="muted">The backend contains a challenge table for participant-only access. Full challenge acceptance/settlement comes next.</p><button class="primary" onclick="start('friendly')">Build Team</button></div>
 <div class="card"><h3>Shared competitions</h3><p class="muted">The league model supports many entrants competing in one round.</p></div></div>`}
 
+let leaderboardTimer=null;
 async function leaderboard(){
  await loadRound(); let rows=[];
  if(state.round){
@@ -118,7 +151,12 @@ async function leaderboard(){
     .eq("round_id",state.round.id).order("total_points",{ascending:false});
   rows=data||[];
  }
- return `<div class="section"><h2>Leaderboard</h2><span class="badge">${rows.length} entrants</span></div><div class="panel"><table class="table">
+ if(!leaderboardTimer){
+   leaderboardTimer=setInterval(()=>{if(state.page==="leaderboard")render();else{clearInterval(leaderboardTimer);leaderboardTimer=null;}},30000);
+ }
+ return `<div class="section"><h2>Leaderboard</h2><span class="badge">🔴 LIVE • ${rows.length} entrants</span></div>
+<p class="muted" style="margin-top:-8px">Points update automatically as real matches are played — this refreshes every 30 seconds.</p>
+<div class="panel"><table class="table">
 <tr><th>#</th><th>Player</th><th>Points</th></tr>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${r.profiles?.display_name||"Player"}</td><td>${r.total_points}</td></tr>`).join("")||"<tr><td colspan=3>No teams submitted.</td></tr>"}</table></div>`;
 }
 
