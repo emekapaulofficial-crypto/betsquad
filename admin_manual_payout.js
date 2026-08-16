@@ -7,13 +7,15 @@
 
 window.adminState = { isAdmin:false, requests:[], rooms:[], filter:"pending" };
 
+/* FIXED: your database uses an admin_users table + is_admin() function,
+   not a profiles.is_admin column. This now checks the right place. */
 async function checkAdmin(){
   if(!state.user) return false;
-  const q=await supabase.from("profiles").select("is_admin").eq("id",state.user.id).maybeSingle();
-  adminState.isAdmin = !!(q.data && q.data.is_admin) && !q.error;
+  const q=await supabase.rpc("is_admin");
+  adminState.isAdmin = !!q.data && !q.error;
+  if(q.error) console.warn("Admin check failed:", q.error.message);
   return adminState.isAdmin;
 }
-
 
 async function loadAdmin(){
   if(!await checkAdmin()) { alert("Admin access required."); return go("home"); }
