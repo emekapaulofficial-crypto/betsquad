@@ -18,7 +18,7 @@ const leagueNeed={GK:1,DEF:3,MID:2,ST:1};
 const friendlyNeed={GK:1,DEF:2,MID:1,ST:1};
 function currentNeed(){return state.mode==="friendly"?friendlyNeed:leagueNeed}
 function teamSize(){return Object.values(currentNeed()).reduce((a,b)=>a+b,0)}
-const state={page:"home",mode:"league",filter:"ALL",selected:[],user:null,round:null,dbPlayers:[],loadingPlayers:false,menuOpen:false,inQueue:false,queueCount:0,friendlyMatchId:null,friendlyMode:null};
+const state={page:"home",mode:"league",filter:"ALL",selected:[],user:null,round:null,dbPlayers:[],loadingPlayers:false,menuOpen:false,inQueue:false,queueCount:0,friendlyMatchId:null,friendlyMode:null,fixtures:[],selectedFixture:null,loadingFixtures:false};
 window.state = state;
 
 async function session(){
@@ -44,8 +44,35 @@ async function syncPlayers(){
     console.warn("Live player sync failed, showing existing data instead:", e.message);
   }
 }
+async function loadFixtures(){
+  const {data}=await supabase.from("upcoming_fixtures").select("*")
+    .eq("status","scheduled").order("kickoff_at",{ascending:true}).limit(20);
+  state.fixtures=data||[];
+}
+async function syncFixtures(){
+  try{
+    await supabase.functions.invoke("sync-fixtures");
+  }catch(e){
+    console.warn("Live fixture sync failed, showing existing data instead:", e.message);
+  }
+}
 
-window.go=p=>{state.page=p;state.menuOpen=false;render()};
+window.go=p=>{
+  state.page=p;state.menuOpen=false;
+  if(p==="matches"){
+    state.loadingFixtures=true;render();
+    (async()=>{await syncFixtures();await loadFixtures();state.loadingFixtures=false;render();})();
+    return;
+  }
+  render();
+};
+window.pickFixture=async id=>{
+  const f=state.fixtures.find(x=>x.id===id);
+  if(!f)return;
+  state.selectedFixture=f;
+  await window.start(state.mode==="friendly"?"friendly":"league");
+};
+window.clearFixture=()=>{state.selectedFixture=null;render()};
 window.toggleMenu=()=>{state.menuOpen=!state.menuOpen;render()};
 window.start=async m=>{
   state.mode=m;state.selected=[];state.page="builder";state.loadingPlayers=true;state.menuOpen=false;render();
@@ -136,7 +163,7 @@ function auth(){return `<div class="two"><div class="panel"><span class="badge">
 function home(){return `<section class="hero"><div class="panel"><span class="badge">FREE TO PLAY • POINTS ONLY</span>
 <h1>Pick real players.<br><span class="green">Score points from real matches.</span></h1>
 <p class="muted">No money changes hands here — this is a free fantasy-style game. You build an 11-player team using real footballers, and when they play their real matches, their actual performance (goals, assists, clean sheets) earns you points automatically.</p>
-<div class="actions">${state.user?`<button class="primary" onclick="start('league')">Join League</button>`:`<button class="primary" onclick="go('auth')">Create account</button>`}<button class="secondary" onclick="go('friendly')">Friendly</button></div></div>
+<div class="actions">${state.user?`<button class="primary" onclick="go('matches')">Join League</button>`:`<button class="primary" onclick="go('auth')">Create account</button>`}<button class="secondary" onclick="go('friendly')">Friendly</button></div></div>
 <div class="panel"><h3>Scoring</h3><p class="muted" style="margin-top:0">Points update automatically once real matches are played.</p>${["Goal|+5","Assist|+3","Clean sheet|+4","Team win|+2","Yellow card|-1"].map(x=>{const [a,b]=x.split("|");return`<div class="row"><span>${a}</span><b>${b}</b></div>`}).join("")}</div></section>
 
 <div class="section"><h2>How it works</h2></div>
@@ -157,8 +184,19 @@ function home(){return `<section class="hero"><div class="panel"><span class="ba
 <div class="card"><h3>Leaderboard</h3><p class="muted">Ranks every entrant in the current round by total points, highest first.</p></div>
 </div>`}
 
+function matches(){
+  if(state.loadingFixtures) return `<div class="panel"><h3>Loading upcoming matches...</h3><p class="muted">Pulling the current real Premier League fixture list live.</p></div>`;
+  return `<div class="section"><h2>Upcoming matches</h2></div>
+<p class="muted" style="margin-top:-8px">Pick a real match — you'll then only see players from those two clubs when building your team.</p>
+<div class="grid">
+${state.fixtures.map(f=>`<div class="card"><span class="badge">${f.kickoff_at?new Date(f.kickoff_at).toLocaleString([], {weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"TBD"}</span>
+<h3>${f.home_team} vs ${f.away_team}</h3>
+<button class="primary" onclick="pickFixture('${f.id}')">Build team for this match</button></div>`).join("")||`<div class="card"><p class="muted">No upcoming fixtures found yet.</p></div>`}
+</div>`;
+}
+
 function rounds(){return `<div class="section"><h2>Rounds</h2></div><div class="card"><span class="badge">${state.round?.status?.toUpperCase()||"NO OPEN ROUND"}</span>
-<h3>${state.round?.name||"No open round"}</h3><p class="muted">${state.round?"Multiple users can enter this same shared round.":"Create an OPEN round in Supabase first."}</p><button class="primary" onclick="start('league')">Build Team</button></div>`}
+<h3>${state.round?.name||"No open round"}</h3><p class="muted">${state.round?"Multiple users can enter this same shared round.":"Create an OPEN round in Supabase first."}</p><button class="primary" onclick="go('matches')">Pick a match</button></div>`}
 
 let lobbyTimer=null;
 function stopLobbyTimer(){if(lobbyTimer){clearInterval(lobbyTimer);lobbyTimer=null;}}
@@ -227,11 +265,13 @@ async function leaderboard(){
 
 function builder(){
  if(state.loadingPlayers) return `<div class="panel"><h3>Syncing the latest players from FPL...</h3><p class="muted">This pulls the current real Premier League player list live.</p></div>`;
- const list=state.dbPlayers.filter(p=>state.filter==="ALL"||p.position===state.filter);
  const need=currentNeed(); const size=teamSize();
+ const clubs=state.selectedFixture?[state.selectedFixture.home_team,state.selectedFixture.away_team]:null;
+ const list=state.dbPlayers.filter(p=>(state.filter==="ALL"||p.position===state.filter)&&(!clubs||clubs.includes(p.club)));
  const slots=["GK",...Array(need.DEF).fill("DEF"),...Array(need.MID).fill("MID"),...Array(need.ST).fill("ST")];
  return `<button class="back" onclick="go('${state.mode==="league"?"rounds":"friendly"}')">← Back</button>
 <div class="section"><h2>Build your ${size}</h2><span class="badge">${state.selected.length}/${size}</span></div>
+${state.selectedFixture?`<p class="notice">Building for: <b>${state.selectedFixture.home_team} vs ${state.selectedFixture.away_team}</b> — <a href="#" onclick="clearFixture();return false;" style="color:#75e7a2">show all players instead</a></p>`:""}
 <div class="builder"><div class="panel"><h3>Your team</h3><div class="formation">${slots.map(pos=>{const p=state.selected.filter(x=>x.position===pos)[0];return`<div class="slot ${pos==="GK"?"gk":""} ${p?"filled":""}">${p?`<div><b>${p.name}</b><div class="small">${p.club||""}</div></div>`:pos}</div>`}).join("")}</div>
 <button class="primary" style="width:100%;margin-top:12px" onclick="submitTeam()">Save team</button></div>
 <div class="panel"><h3>Players</h3><div class="filters">${["ALL","GK","DEF","MID","ST"].map(f=>`<button class="${state.filter===f?"active":""}" onclick="filter('${f}')">${f}</button>`).join("")}</div>
@@ -241,7 +281,7 @@ ${list.map(p=>`<div class="row"><div><b>${p.name}</b><div class="small">${p.club
 const rooms=async()=>{await prepareRoomsPage();return roomsPage()};
 const room=async()=>roomLobby();
 const admin=async()=>{await loadAdmin();return adminDashboard()};
-const pages={home,auth,rooms,room,admin,rounds,friendly,leaderboard,builder};
+const pages={home,auth,rooms,room,admin,rounds,friendly,leaderboard,builder,matches};
 async function render(){document.querySelector("#app").innerHTML=nav()+`<main class="wrap">${await pages[state.page]()}</main>`}
 window.render = render;
 async function boot(){await session();await loadRound();await loadDbPlayers();await render()}
