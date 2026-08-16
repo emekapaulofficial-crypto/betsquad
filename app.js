@@ -335,6 +335,12 @@ const admin=async()=>{await loadAdmin();return adminDashboard()};
 const pages={home,auth,rooms,room,admin,rounds,friendly,leaderboard,builder,matches,wallet};
 async function render(){document.querySelector("#app").innerHTML=nav()+`<main class="wrap">${await pages[state.page]()}</main>`}
 window.render = render;
-async function boot(){await session();await loadRound();await loadDbPlayers();await render()}
+async function boot(){
+  await render();
+  await session();
+  await loadRound();
+  await loadDbPlayers();
+  await render();
+}
 supabase.auth.onAuthStateChange(async()=>{await session();await render()});
 boot();
