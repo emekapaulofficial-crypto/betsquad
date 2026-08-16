@@ -1,4 +1,3 @@
-
 /* V6 Admin Dashboard + Manual Payouts
    Manual payout workflow:
    Pending -> Approved -> (admin sends money externally) -> Paid
