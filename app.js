@@ -37,6 +37,21 @@ window.addEventListener("unhandledrejection", e=>{
 });
 /* ------------------------------------------ */
 
+/* ---------- BOOT CONFIRMATION BANNER ----------
+   Shows a green banner for a few seconds when app.js has
+   successfully loaded and started running. If you NEVER see
+   this banner on page load, app.js itself failed to load
+   (wrong filename/path, GitHub Pages caching, or a network
+   block) — that's a different problem than a sign-in bug. */
+function showBootBanner(msg, ok){
+  const el = document.createElement("div");
+  el.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:99998;background:${ok?"#1f7a3f":"#c0392b"};color:#fff;padding:8px 14px;font:12px monospace;text-align:center;`;
+  el.textContent = msg;
+  document.body.prepend(el);
+  if(ok) setTimeout(()=>el.remove(), 4000);
+}
+/* ------------------------------------------ */
+
 const leagueNeed={GK:1,DEF:3,MID:2,ST:1};
 const friendlyNeed={GK:1,DEF:2,MID:1,ST:1};
 function currentNeed(){return state.mode==="friendly"?friendlyNeed:leagueNeed}
@@ -118,23 +133,29 @@ window.signOut=async()=>{await supabase.auth.signOut();state.user=null;state.sel
    shows up as an alert AND in the red banner, instead of
    the button silently doing nothing. */
 window.signIn=async()=>{
+  console.log("[signIn] button clicked");
   try{
     const emailEl=document.querySelector("#email"), passEl=document.querySelector("#password");
     if(!emailEl||!passEl){ showErrorBanner("Sign-in form fields not found on page."); return; }
     const email=emailEl.value.trim(), password=passEl.value;
     if(!email||!password){ alert("Enter both email and password."); return; }
+    if(!window.supabase){ showErrorBanner("Supabase client not ready yet. Wait a second and try again."); return; }
     const {error}=await supabase.auth.signInWithPassword({email,password});
     if(error){ alert(error.message); showErrorBanner("Sign in failed: "+error.message); return; }
-    await session(); state.menuOpen=false; render();
+    await session(); state.menuOpen=false; state.page="home"; render();
   }catch(e){
     showErrorBanner("Sign in crashed: " + e.message);
     alert("Something went wrong signing in: " + e.message);
   }
 };
 window.signUp=async()=>{
+  console.log("[signUp] button clicked");
   try{
-    const name=document.querySelector("#name").value.trim(), email=document.querySelector("#email").value.trim(), password=document.querySelector("#password").value;
+    const nameEl=document.querySelector("#name"), emailEl=document.querySelector("#email"), passEl=document.querySelector("#password");
+    if(!nameEl||!emailEl||!passEl){ showErrorBanner("Sign-up form fields not found on page."); return; }
+    const name=nameEl.value.trim(), email=emailEl.value.trim(), password=passEl.value;
     if(!name||!email||password.length<6)return alert("Enter name, email and a password of at least 6 characters.");
+    if(!window.supabase){ showErrorBanner("Supabase client not ready yet. Wait a second and try again."); return; }
     const {error}=await supabase.auth.signUp({email,password,options:{data:{name}}});
     if(error){ alert(error.message); showErrorBanner("Sign up failed: "+error.message); return; }
     alert("Account created. Check your email if confirmation is enabled.");
@@ -381,11 +402,13 @@ window.render = render;
 async function boot(){
   try{
     await render();
+    showBootBanner("✓ App loaded successfully (app.js is running)", true);
     await session();
     await loadRound();
     await loadDbPlayers();
     await render();
   }catch(e){
+    showBootBanner("✗ Startup failed — see red banner below", false);
     showErrorBanner("Startup failed: " + e.message);
   }
 }
