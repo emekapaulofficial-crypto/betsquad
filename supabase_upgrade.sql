@@ -1,150 +1,35 @@
 -- Football Points / BetSquad platform upgrade
--- Run this in Supabase SQL Editor after your existing schema.
--- This migration is additive and repairs account/wallet creation, referrals, customer care,
--- and the minimum infrastructure needed by the automatic settlement worker.
-
+-- Run this entire file once in Supabase SQL Editor after the existing schema.
 create extension if not exists pgcrypto;
-
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  display_name text,
-  email text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-alter table public.profiles add column if not exists display_name text;
-alter table public.profiles add column if not exists email text;
-alter table public.profiles add column if not exists created_at timestamptz not null default now();
-alter table public.profiles add column if not exists updated_at timestamptz not null default now();
-
-create table if not exists public.game_wallets (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  points bigint not null default 0,
-  diamonds bigint not null default 0,
-  cash_balance numeric(14,2) not null default 0,
-  updated_at timestamptz not null default now()
-);
-
-create or replace function public.ensure_user_profile_and_wallet()
-returns trigger language plpgsql security definer set search_path = public as $$
-begin
-  insert into public.profiles(id,display_name,email)
-  values(new.id,coalesce(new.raw_user_meta_data->>'name',new.raw_user_meta_data->>'display_name',split_part(coalesce(new.email,''),'@',1)),new.email)
-  on conflict(id) do update set email=excluded.email,display_name=coalesce(nullif(public.profiles.display_name,''),excluded.display_name),updated_at=now();
-  insert into public.game_wallets(user_id) values(new.id) on conflict(user_id) do nothing;
-  return new;
-end;
-$$;
-drop trigger if exists on_auth_user_created_betsquad on auth.users;
-create trigger on_auth_user_created_betsquad after insert on auth.users for each row execute function public.ensure_user_profile_and_wallet();
-insert into public.profiles(id,display_name,email)
-select u.id,coalesce(u.raw_user_meta_data->>'name',u.raw_user_meta_data->>'display_name',split_part(coalesce(u.email,''),'@',1)),u.email from auth.users u on conflict(id) do nothing;
-insert into public.game_wallets(user_id) select id from auth.users on conflict(user_id) do nothing;
-
-create table if not exists public.referral_codes (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  code text not null unique,
-  diamond_reward bigint not null default 100,
-  total_referrals integer not null default 0,
-  total_earned bigint not null default 0,
-  created_at timestamptz not null default now()
-);
-create table if not exists public.referrals (
-  id uuid primary key default gen_random_uuid(),
-  referrer_id uuid not null references auth.users(id) on delete cascade,
-  referred_user_id uuid not null unique references auth.users(id) on delete cascade,
-  code text not null,
-  reward_diamonds bigint not null default 100,
-  status text not null default 'pending' check(status in ('pending','validated','rejected')),
-  created_at timestamptz not null default now(),
-  validated_at timestamptz
-);
-create or replace function public.make_referral_code(p_user_id uuid) returns text language sql security definer set search_path=public as $$
-  select 'FP'||upper(substr(encode(digest(p_user_id::text,'sha256'),'hex'),1,8));
-$$;
+create table if not exists public.profiles(id uuid primary key references auth.users(id) on delete cascade,display_name text,email text,created_at timestamptz not null default now(),updated_at timestamptz not null default now());
+alter table public.profiles add column if not exists display_name text; alter table public.profiles add column if not exists email text; alter table public.profiles add column if not exists created_at timestamptz not null default now(); alter table public.profiles add column if not exists updated_at timestamptz not null default now();
+create table if not exists public.game_wallets(user_id uuid primary key references auth.users(id) on delete cascade,points bigint not null default 0,diamonds bigint not null default 0,cash_balance numeric(14,2) not null default 0,updated_at timestamptz not null default now());
+create or replace function public.ensure_user_profile_and_wallet() returns trigger language plpgsql security definer set search_path=public as $$ begin insert into public.profiles(id,display_name,email) values(new.id,coalesce(new.raw_user_meta_data->>'name',new.raw_user_meta_data->>'display_name',split_part(coalesce(new.email,''),'@',1)),new.email) on conflict(id) do update set email=excluded.email,display_name=coalesce(nullif(public.profiles.display_name,''),excluded.display_name),updated_at=now(); insert into public.game_wallets(user_id) values(new.id) on conflict(user_id) do nothing; return new; end; $$;
+drop trigger if exists on_auth_user_created_betsquad on auth.users; create trigger on_auth_user_created_betsquad after insert on auth.users for each row execute function public.ensure_user_profile_and_wallet();
+insert into public.profiles(id,display_name,email) select u.id,coalesce(u.raw_user_meta_data->>'name',u.raw_user_meta_data->>'display_name',split_part(coalesce(u.email,''),'@',1)),u.email from auth.users u on conflict(id) do nothing; insert into public.game_wallets(user_id) select id from auth.users on conflict(user_id) do nothing;
+create table if not exists public.referral_codes(user_id uuid primary key references auth.users(id) on delete cascade,code text not null unique,diamond_reward bigint not null default 100,total_referrals integer not null default 0,total_earned bigint not null default 0,created_at timestamptz not null default now());
+create table if not exists public.referrals(id uuid primary key default gen_random_uuid(),referrer_id uuid not null references auth.users(id) on delete cascade,referred_user_id uuid not null unique references auth.users(id) on delete cascade,code text not null,reward_diamonds bigint not null default 100,status text not null default 'pending' check(status in('pending','validated','rejected')),created_at timestamptz not null default now(),validated_at timestamptz);
+create or replace function public.make_referral_code(p_user_id uuid) returns text language sql security definer set search_path=public as $$ select 'FP'||upper(substr(encode(digest(p_user_id::text,'sha256'),'hex'),1,8)); $$;
 insert into public.referral_codes(user_id,code) select id,public.make_referral_code(id) from auth.users on conflict(user_id) do nothing;
-
-create or replace function public.claim_referral(p_code text) returns jsonb language plpgsql security definer set search_path=public as $$
-declare me uuid:=auth.uid(); ref public.referral_codes%rowtype; reward bigint;
-begin
-  if me is null then raise exception 'You must be signed in'; end if;
-  select * into ref from public.referral_codes where upper(code)=upper(trim(p_code));
-  if not found then return jsonb_build_object('ok',false,'reason','code_not_found'); end if;
-  if ref.user_id=me then return jsonb_build_object('ok',false,'reason','self_referral'); end if;
-  if exists(select 1 from public.referrals where referred_user_id=me) then return jsonb_build_object('ok',false,'reason','already_claimed'); end if;
-  reward:=ref.diamond_reward;
-  insert into public.referrals(referrer_id,referred_user_id,code,reward_diamonds,status,validated_at) values(ref.user_id,me,ref.code,reward,'validated',now());
-  insert into public.game_wallets(user_id) values(ref.user_id) on conflict do nothing;
-  update public.game_wallets set diamonds=diamonds+reward,updated_at=now() where user_id=ref.user_id;
-  update public.referral_codes set total_referrals=total_referrals+1,total_earned=total_earned+reward where user_id=ref.user_id;
-  return jsonb_build_object('ok',true,'reward',reward);
-end;
-$$;
+create or replace function public.claim_referral(p_code text) returns jsonb language plpgsql security definer set search_path=public as $$ declare me uuid:=auth.uid(); ref public.referral_codes%rowtype; reward bigint; begin if me is null then raise exception 'You must be signed in'; end if; select * into ref from public.referral_codes where upper(code)=upper(trim(p_code)); if not found then return jsonb_build_object('ok',false,'reason','code_not_found'); end if; if ref.user_id=me then return jsonb_build_object('ok',false,'reason','self_referral'); end if; if exists(select 1 from public.referrals where referred_user_id=me) then return jsonb_build_object('ok',false,'reason','already_claimed'); end if; reward:=ref.diamond_reward; insert into public.referrals(referrer_id,referred_user_id,code,reward_diamonds,status,validated_at) values(ref.user_id,me,ref.code,reward,'validated',now()); update public.game_wallets set diamonds=diamonds+reward,updated_at=now() where user_id=ref.user_id; update public.referral_codes set total_referrals=total_referrals+1,total_earned=total_earned+reward where user_id=ref.user_id; return jsonb_build_object('ok',true,'reward',reward); end; $$;
 grant execute on function public.claim_referral(text) to authenticated;
-
-create table if not exists public.support_threads (
-  id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
-  subject text not null default 'Customer support', status text not null default 'open' check(status in ('open','pending','closed')),
-  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
-);
-create table if not exists public.support_messages (
-  id uuid primary key default gen_random_uuid(), thread_id uuid not null references public.support_threads(id) on delete cascade,
-  sender_id uuid not null references auth.users(id) on delete cascade, message text not null, created_at timestamptz not null default now()
-);
-create index if not exists support_threads_user_idx on public.support_threads(user_id,created_at desc);
-create index if not exists support_messages_thread_idx on public.support_messages(thread_id,created_at);
-
-create table if not exists public.admin_users(user_id uuid primary key references auth.users(id) on delete cascade,active boolean not null default true);
-alter table public.admin_users add column if not exists active boolean not null default true;
-create or replace function public.is_admin() returns boolean language sql security definer set search_path=public stable as $$
-  select exists(select 1 from public.admin_users where user_id=auth.uid() and active=true);
-$$;
-grant execute on function public.is_admin() to authenticated;
-
-alter table public.support_threads enable row level security;
-alter table public.support_messages enable row level security;
-alter table public.referral_codes enable row level security;
-alter table public.referrals enable row level security;
-alter table public.game_wallets enable row level security;
-alter table public.profiles enable row level security;
-drop policy if exists support_threads_owner on public.support_threads;
-create policy support_threads_owner on public.support_threads for all to authenticated using(user_id=auth.uid() or public.is_admin()) with check(user_id=auth.uid() or public.is_admin());
-drop policy if exists support_messages_participant on public.support_messages;
-create policy support_messages_participant on public.support_messages for all to authenticated using(public.is_admin() or exists(select 1 from public.support_threads t where t.id=thread_id and t.user_id=auth.uid())) with check(public.is_admin() or sender_id=auth.uid());
-drop policy if exists referral_codes_owner_read on public.referral_codes;
-create policy referral_codes_owner_read on public.referral_codes for select to authenticated using(user_id=auth.uid());
-drop policy if exists referrals_participant_read on public.referrals;
-create policy referrals_participant_read on public.referrals for select to authenticated using(referrer_id=auth.uid() or referred_user_id=auth.uid() or public.is_admin());
-drop policy if exists wallet_owner_read on public.game_wallets;
-create policy wallet_owner_read on public.game_wallets for select to authenticated using(user_id=auth.uid() or public.is_admin());
-drop policy if exists profiles_owner_read on public.profiles;
-create policy profiles_owner_read on public.profiles for select to authenticated using(id=auth.uid() or public.is_admin());
-
-do $$ begin alter publication supabase_realtime add table public.support_threads; exception when duplicate_object then null; when undefined_object then null; end $$;
-do $$ begin alter publication supabase_realtime add table public.support_messages; exception when duplicate_object then null; when undefined_object then null; end $$;
-
-create table if not exists public.fixture_player_stats (
-  id uuid primary key default gen_random_uuid(), fixture_id uuid not null, player_id uuid not null,
-  goals integer not null default 0, assists integer not null default 0, clean_sheet boolean not null default false,
-  team_win boolean not null default false, yellow_cards integer not null default 0,
-  points integer generated always as ((goals*5)+(assists*3)+(case when clean_sheet then 4 else 0 end)+(case when team_win then 2 else 0 end)-yellow_cards) stored,
-  created_at timestamptz not null default now(), unique(fixture_id,player_id)
-);
-create table if not exists public.entry_fixtures(entry_id uuid not null,fixture_id uuid not null,primary key(entry_id,fixture_id));
-create index if not exists entry_fixtures_fixture_idx on public.entry_fixtures(fixture_id);
-create table if not exists public.settlement_runs(id uuid primary key default gen_random_uuid(),fixture_id uuid not null,settled_at timestamptz not null default now(),unique(fixture_id));
-
-create or replace function public.settle_fixture_points() returns jsonb language plpgsql security definer set search_path=public as $$
-declare updated_count integer:=0;
-begin
-  update public.entries e set total_points=coalesce((select sum(fps.points) from public.entry_players ep join public.fixture_player_stats fps on fps.player_id=ep.player_id where ep.entry_id=e.id and exists(select 1 from public.entry_fixtures ef where ef.entry_id=e.id and ef.fixture_id=fps.fixture_id)),0)
-  where e.id in(select distinct entry_id from public.entry_fixtures);
-  get diagnostics updated_count=row_count;
-  return jsonb_build_object('ok',true,'entries_updated',updated_count);
-end;
-$$;
-revoke all on function public.settle_fixture_points() from public,anon,authenticated;
-grant execute on function public.settle_fixture_points() to service_role;
-
--- IMPORTANT: set your own admin user after running this migration:
--- insert into public.admin_users(user_id) values('YOUR-AUTH-USER-UUID') on conflict do nothing;
+-- Automatically validate a referral supplied in signup metadata.
+create or replace function public.process_signup_referral() returns trigger language plpgsql security definer set search_path=public as $$ declare code text:=new.raw_user_meta_data->>'referral_code'; ref public.referral_codes%rowtype; reward bigint; begin if code is null or trim(code)='' then return new; end if; select * into ref from public.referral_codes where upper(referral_codes.code)=upper(trim(code)); if not found or ref.user_id=new.id then return new; end if; if exists(select 1 from public.referrals where referred_user_id=new.id) then return new; end if; reward:=ref.diamond_reward; insert into public.referrals(referrer_id,referred_user_id,code,reward_diamonds,status,validated_at) values(ref.user_id,new.id,ref.code,reward,'validated',now()); update public.game_wallets set diamonds=diamonds+reward,updated_at=now() where user_id=ref.user_id; update public.referral_codes set total_referrals=total_referrals+1,total_earned=total_earned+reward where user_id=ref.user_id; return new; end; $$;
+drop trigger if exists on_auth_user_signup_referral on auth.users; create trigger on_auth_user_signup_referral after insert on auth.users for each row execute function public.process_signup_referral();
+create table if not exists public.support_threads(id uuid primary key default gen_random_uuid(),user_id uuid not null references auth.users(id) on delete cascade,subject text not null default 'Customer support',status text not null default 'open' check(status in('open','pending','closed')),created_at timestamptz not null default now(),updated_at timestamptz not null default now());
+create table if not exists public.support_messages(id uuid primary key default gen_random_uuid(),thread_id uuid not null references public.support_threads(id) on delete cascade,sender_id uuid not null references auth.users(id) on delete cascade,message text not null,created_at timestamptz not null default now());
+create index if not exists support_threads_user_idx on public.support_threads(user_id,created_at desc); create index if not exists support_messages_thread_idx on public.support_messages(thread_id,created_at);
+create table if not exists public.admin_users(user_id uuid primary key references auth.users(id) on delete cascade,active boolean not null default true); alter table public.admin_users add column if not exists active boolean not null default true;
+create or replace function public.is_admin() returns boolean language sql security definer set search_path=public stable as $$ select exists(select 1 from public.admin_users where user_id=auth.uid() and active=true); $$; grant execute on function public.is_admin() to authenticated;
+alter table public.support_threads enable row level security; alter table public.support_messages enable row level security; alter table public.referral_codes enable row level security; alter table public.referrals enable row level security; alter table public.game_wallets enable row level security; alter table public.profiles enable row level security;
+drop policy if exists support_threads_owner on public.support_threads; create policy support_threads_owner on public.support_threads for all to authenticated using(user_id=auth.uid() or public.is_admin()) with check(user_id=auth.uid() or public.is_admin());
+drop policy if exists support_messages_participant on public.support_messages; create policy support_messages_participant on public.support_messages for all to authenticated using(public.is_admin() or exists(select 1 from public.support_threads t where t.id=thread_id and t.user_id=auth.uid())) with check(public.is_admin() or sender_id=auth.uid());
+drop policy if exists referral_codes_owner_read on public.referral_codes; create policy referral_codes_owner_read on public.referral_codes for select to authenticated using(user_id=auth.uid());
+drop policy if exists referrals_participant_read on public.referrals; create policy referrals_participant_read on public.referrals for select to authenticated using(referrer_id=auth.uid() or referred_user_id=auth.uid() or public.is_admin());
+drop policy if exists wallet_owner_read on public.game_wallets; create policy wallet_owner_read on public.game_wallets for select to authenticated using(user_id=auth.uid() or public.is_admin());
+drop policy if exists profiles_owner_read on public.profiles; create policy profiles_owner_read on public.profiles for select to authenticated using(id=auth.uid() or public.is_admin());
+do $$ begin alter publication supabase_realtime add table public.support_threads; exception when duplicate_object then null; when undefined_object then null; end $$; do $$ begin alter publication supabase_realtime add table public.support_messages; exception when duplicate_object then null; when undefined_object then null; end $$;
+create table if not exists public.fixture_player_stats(id uuid primary key default gen_random_uuid(),fixture_id uuid not null,player_id uuid not null,goals integer not null default 0,assists integer not null default 0,clean_sheet boolean not null default false,team_win boolean not null default false,yellow_cards integer not null default 0,points integer generated always as((goals*5)+(assists*3)+(case when clean_sheet then 4 else 0 end)+(case when team_win then 2 else 0 end)-yellow_cards) stored,created_at timestamptz not null default now(),unique(fixture_id,player_id));
+create table if not exists public.entry_fixtures(entry_id uuid not null,fixture_id uuid not null,primary key(entry_id,fixture_id)); create index if not exists entry_fixtures_fixture_idx on public.entry_fixtures(fixture_id); create table if not exists public.settlement_runs(id uuid primary key default gen_random_uuid(),fixture_id uuid not null,settled_at timestamptz not null default now(),unique(fixture_id));
+create or replace function public.settle_fixture_points() returns jsonb language plpgsql security definer set search_path=public as $$ declare updated_count integer:=0; begin update public.entries e set total_points=coalesce((select sum(fps.points) from public.entry_players ep join public.fixture_player_stats fps on fps.player_id=ep.player_id where ep.entry_id=e.id and exists(select 1 from public.entry_fixtures ef where ef.entry_id=e.id and ef.fixture_id=fps.fixture_id)),0) where e.id in(select distinct entry_id from public.entry_fixtures); get diagnostics updated_count=row_count; return jsonb_build_object('ok',true,'entries_updated',updated_count); end; $$; revoke all on function public.settle_fixture_points() from public,anon,authenticated; grant execute on function public.settle_fixture_points() to service_role;
+-- Set your admin after running: insert into public.admin_users(user_id) values('YOUR-AUTH-USER-UUID') on conflict do nothing;
