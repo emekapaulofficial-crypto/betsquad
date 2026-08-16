@@ -12,6 +12,31 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_E40QKzlb3dtIoawvmxPHfA_07t2XIxu
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 window.supabase = supabase;
 
+/* ---------- VISIBLE ERROR BANNER ----------
+   Since dev tools aren't always available, this shows any
+   JavaScript error or failed request directly on the page,
+   in a red banner at the top, instead of failing silently. */
+function showErrorBanner(msg){
+  let el = document.querySelector("#debugBanner");
+  if(!el){
+    el = document.createElement("div");
+    el.id = "debugBanner";
+    el.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:99999;background:#c0392b;color:#fff;padding:10px 14px;font:13px monospace;white-space:pre-wrap;max-height:40vh;overflow:auto;";
+    document.body.prepend(el);
+  }
+  const line = document.createElement("div");
+  line.style.marginTop = "6px";
+  line.textContent = "⚠ " + msg;
+  el.appendChild(line);
+}
+window.addEventListener("error", e=>{
+  showErrorBanner((e.message||"Unknown error") + (e.filename?` (${e.filename.split("/").pop()}:${e.lineno})`:""));
+});
+window.addEventListener("unhandledrejection", e=>{
+  showErrorBanner("Unhandled: " + (e.reason?.message || e.reason));
+});
+/* ------------------------------------------ */
+
 const leagueNeed={GK:1,DEF:3,MID:2,ST:1};
 const friendlyNeed={GK:1,DEF:2,MID:1,ST:1};
 function currentNeed(){return state.mode==="friendly"?friendlyNeed:leagueNeed}
@@ -87,18 +112,36 @@ window.start=async m=>{
 };
 window.filter=f=>{state.filter=f;render()};
 window.signOut=async()=>{await supabase.auth.signOut();state.user=null;state.selected=[];state.menuOpen=false;render()};
+
+/* signIn/signUp now wrapped in try/catch so ANY failure
+   (network, typo in field id, Supabase misconfiguration, etc.)
+   shows up as an alert AND in the red banner, instead of
+   the button silently doing nothing. */
 window.signIn=async()=>{
-  const email=document.querySelector("#email").value.trim(), password=document.querySelector("#password").value;
-  const {error}=await supabase.auth.signInWithPassword({email,password});
-  if(error) return alert(error.message);
-  await session(); state.menuOpen=false; render();
+  try{
+    const emailEl=document.querySelector("#email"), passEl=document.querySelector("#password");
+    if(!emailEl||!passEl){ showErrorBanner("Sign-in form fields not found on page."); return; }
+    const email=emailEl.value.trim(), password=passEl.value;
+    if(!email||!password){ alert("Enter both email and password."); return; }
+    const {error}=await supabase.auth.signInWithPassword({email,password});
+    if(error){ alert(error.message); showErrorBanner("Sign in failed: "+error.message); return; }
+    await session(); state.menuOpen=false; render();
+  }catch(e){
+    showErrorBanner("Sign in crashed: " + e.message);
+    alert("Something went wrong signing in: " + e.message);
+  }
 };
 window.signUp=async()=>{
-  const name=document.querySelector("#name").value.trim(), email=document.querySelector("#email").value.trim(), password=document.querySelector("#password").value;
-  if(!name||!email||password.length<6)return alert("Enter name, email and a password of at least 6 characters.");
-  const {error}=await supabase.auth.signUp({email,password,options:{data:{name}}});
-  if(error)return alert(error.message);
-  alert("Account created. Check your email if confirmation is enabled.");
+  try{
+    const name=document.querySelector("#name").value.trim(), email=document.querySelector("#email").value.trim(), password=document.querySelector("#password").value;
+    if(!name||!email||password.length<6)return alert("Enter name, email and a password of at least 6 characters.");
+    const {error}=await supabase.auth.signUp({email,password,options:{data:{name}}});
+    if(error){ alert(error.message); showErrorBanner("Sign up failed: "+error.message); return; }
+    alert("Account created. Check your email if confirmation is enabled.");
+  }catch(e){
+    showErrorBanner("Sign up crashed: " + e.message);
+    alert("Something went wrong signing up: " + e.message);
+  }
 };
 window.add=id=>{
   const p=state.dbPlayers.find(x=>x.id===id);
@@ -336,11 +379,22 @@ const pages={home,auth,rooms,room,admin,rounds,friendly,leaderboard,builder,matc
 async function render(){document.querySelector("#app").innerHTML=nav()+`<main class="wrap">${await pages[state.page]()}</main>`}
 window.render = render;
 async function boot(){
-  await render();
-  await session();
-  await loadRound();
-  await loadDbPlayers();
-  await render();
+  try{
+    await render();
+    await session();
+    await loadRound();
+    await loadDbPlayers();
+    await render();
+  }catch(e){
+    showErrorBanner("Startup failed: " + e.message);
+  }
 }
 supabase.auth.onAuthStateChange(async()=>{await session();await render()});
-boot();
+
+/* Run boot() reliably even if this module executes before or
+   after the DOM is fully parsed. */
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", boot);
+}else{
+  boot();
+}
