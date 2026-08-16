@@ -1,0 +1,17 @@
+(function(){
+async function adminSupport(){
+  if(!state.user){alert('Admin access required.');return go('auth')}
+  const {data:isAdmin,error:ae}=await supabase.rpc('is_admin');if(ae||!isAdmin){alert('Admin access required.');return}
+  const {data:threads,error}=await supabase.from('support_threads').select('id,user_id,subject,status,created_at,profiles(display_name,email)').order('created_at',{ascending:false}).limit(100);
+  if(error)return alert(error.message);
+  state.page='support';render();
+  setTimeout(()=>{const box=document.querySelector('#supportAdminBox');if(!box)return;box.innerHTML=(threads||[]).map(t=>`<div class="panel" style="margin-bottom:10px"><b>${esc(t.subject)}</b><div class="small">${esc(t.profiles?.display_name||t.profiles?.email||t.user_id)} • ${esc(t.status)} • ${new Date(t.created_at).toLocaleString()}</div><button class="secondary" onclick="adminOpenSupport('${t.id}')">Open</button></div>`).join('')||'<p class="muted">No support conversations.</p>'},0)
+}
+async function adminOpenSupport(id){const {data:t}=await supabase.from('support_threads').select('id,subject,status,user_id,profiles(display_name,email)').eq('id',id).single();const {data:msgs,error}=await supabase.from('support_messages').select('sender_id,message,created_at').eq('thread_id',id).order('created_at');if(error)return alert(error.message);state.page='supportThread';render();setTimeout(()=>{const box=document.querySelector('#supportThreadBox');box.innerHTML=`<button class="secondary" onclick="adminSupport()">← Back</button><h3>${esc(t.subject)}</h3><p class="muted">${esc(t.profiles?.display_name||t.profiles?.email||t.user_id)}</p><div class="panel">${(msgs||[]).map(m=>`<div class="row"><span>${esc(m.message)}<br><small>${new Date(m.created_at).toLocaleString()}</small></span></div>`).join('')||'<p>No messages.</p>'}</div><textarea id="adminSupportReply" rows="4" placeholder="Reply to customer..."></textarea><button class="primary" onclick="adminReplySupport('${id}')">Send reply</button><button class="secondary" onclick="adminCloseSupport('${id}')">Close ticket</button>`},0)}
+async function adminReplySupport(id){const message=document.querySelector('#adminSupportReply').value.trim();if(!message)return alert('Write a reply.');const {error}=await supabase.from('support_messages').insert({thread_id:id,sender_id:state.user.id,message});if(error)return alert(error.message);await supabase.from('support_threads').update({status:'open',updated_at:new Date().toISOString()}).eq('id',id);adminOpenSupport(id)}
+async function adminCloseSupport(id){const {error}=await supabase.from('support_threads').update({status:'closed',updated_at:new Date().toISOString()}).eq('id',id);if(error)return alert(error.message);adminSupport()}
+function supportPage(){return `<div class="section"><div><span class="badge">CUSTOMER CARE</span><h2>Support inbox</h2></div><button class="secondary" onclick="go('home')">Exit</button></div><div id="supportAdminBox"><p class="muted">Loading...</p></div>`}
+function supportThreadPage(){return `<div class="section"><h2>Customer conversation</h2></div><div id="supportThreadBox"><p class="muted">Loading...</p></div>`}
+function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+window.adminSupport=adminSupport;window.adminOpenSupport=adminOpenSupport;window.adminReplySupport=adminReplySupport;window.adminCloseSupport=adminCloseSupport;window.supportPage=supportPage;window.supportThreadPage=supportThreadPage;
+})();
