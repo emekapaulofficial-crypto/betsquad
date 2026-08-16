@@ -14,8 +14,11 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 // and need direct access to these — module-scoped consts are NOT global by default.
 window.supabase = supabase;
 
-const need={GK:1,DEF:4,MID:4,ST:2};
-const state={page:"home",mode:"league",filter:"ALL",selected:[],user:null,round:null,dbPlayers:[],loadingPlayers:false,menuOpen:false};
+const leagueNeed={GK:1,DEF:3,MID:2,ST:1};
+const friendlyNeed={GK:1,DEF:2,MID:1,ST:1};
+function currentNeed(){return state.mode==="friendly"?friendlyNeed:leagueNeed}
+function teamSize(){return Object.values(currentNeed()).reduce((a,b)=>a+b,0)}
+const state={page:"home",mode:"league",filter:"ALL",selected:[],user:null,round:null,dbPlayers:[],loadingPlayers:false,menuOpen:false,inQueue:false,queueCount:0,friendlyMatchId:null,friendlyMode:null};
 window.state = state;
 
 async function session(){
@@ -70,15 +73,32 @@ window.add=id=>{
   const p=state.dbPlayers.find(x=>x.id===id);
   if(!p)return;
   if(state.selected.some(x=>x.id===p.id))return;
-  if(state.selected.filter(x=>x.position===p.position).length>=need[p.position])return alert(`4-4-2 allows ${need[p.position]} ${p.position} player(s).`);
+  const need=currentNeed();
+  if(!need[p.position])return alert(`No ${p.position} slot in this team size.`);
+  if(state.selected.filter(x=>x.position===p.position).length>=need[p.position])return alert(`This team allows ${need[p.position]} ${p.position} player(s).`);
   state.selected.push(p);render();
 };
 window.submitTeam=async()=>{
   if(!state.user)return go("auth");
+  const need=currentNeed();
+  if(!Object.keys(need).every(k=>state.selected.filter(x=>x.position===k).length===need[k]))
+    return alert(`Complete all ${teamSize()} positions.`);
+
+  if(state.mode==="friendly"&&state.friendlyMatchId){
+    const {data:entry,error:e1}=await supabase.from("friendly_match_entries")
+      .insert({match_id:state.friendlyMatchId,user_id:state.user.id,submitted_at:new Date().toISOString()})
+      .select().single();
+    if(e1)return alert(e1.message);
+    const rows=state.selected.map(p=>({entry_id:entry.id,player_id:p.id,slot_position:p.position}));
+    const {error:e2}=await supabase.from("friendly_match_entry_players").insert(rows);
+    if(e2){await supabase.from("friendly_match_entries").delete().eq("id",entry.id);return alert(e2.message);}
+    alert("Team saved. Waiting for real matches to be played to see your points.");
+    state.page="friendly";render();
+    return;
+  }
+
   await loadRound();
   if(!state.round)return alert("No OPEN round exists in Supabase.");
-  if(!Object.keys(need).every(k=>state.selected.filter(x=>x.position===k).length===need[k]))
-    return alert("Complete all 11 positions.");
 
   const {data:entry,error:e1}=await supabase.from("entries")
     .insert({round_id:state.round.id,user_id:state.user.id,submitted_at:new Date().toISOString()})
@@ -116,16 +136,16 @@ function auth(){return `<div class="two"><div class="panel"><span class="badge">
 function home(){return `<section class="hero"><div class="panel"><span class="badge">FREE TO PLAY • POINTS ONLY</span>
 <h1>Pick real players.<br><span class="green">Score points from real matches.</span></h1>
 <p class="muted">No money changes hands here — this is a free fantasy-style game. You build an 11-player team using real footballers, and when they play their real matches, their actual performance (goals, assists, clean sheets) earns you points automatically.</p>
-<div class="actions">${state.user?`<button class="primary" onclick="start('league')">Join League</button>`:`<button class="primary" onclick="go('auth')">Create account</button>`}<button class="secondary" onclick="start('friendly')">Friendly</button></div></div>
+<div class="actions">${state.user?`<button class="primary" onclick="start('league')">Join League</button>`:`<button class="primary" onclick="go('auth')">Create account</button>`}<button class="secondary" onclick="go('friendly')">Friendly</button></div></div>
 <div class="panel"><h3>Scoring</h3><p class="muted" style="margin-top:0">Points update automatically once real matches are played.</p>${["Goal|+5","Assist|+3","Clean sheet|+4","Team win|+2","Yellow card|-1"].map(x=>{const [a,b]=x.split("|");return`<div class="row"><span>${a}</span><b>${b}</b></div>`}).join("")}</div></section>
 
 <div class="section"><h2>How it works</h2></div>
 <div class="grid">
 <div class="card"><span class="badge">STEP 1</span><h3>Create an account</h3><p class="muted">Sign up with your name, email and a password. This is what saves your team and points to the database.</p></div>
-<div class="card"><span class="badge">STEP 2</span><h3>Build your 11</h3><p class="muted">Pick 1 goalkeeper, 4 defenders, 4 midfielders and 2 strikers from real Premier League players — a valid 4-4-2 formation.</p></div>
-<div class="card"><span class="badge">STEP 3</span><h3>Save your team</h3><p class="muted">Once all 11 slots are filled, save your team. It's now entered into the current open round.</p></div>
+<div class="card"><span class="badge">STEP 2</span><h3>Build your team</h3><p class="muted">League rounds use a 7-player team (1 GK, 3 DEF, 2 MID, 1 ST). Friendly matches use a 5-player team (1 GK, 2 DEF, 1 MID, 1 ST).</p></div>
+<div class="card"><span class="badge">STEP 3</span><h3>Save your team</h3><p class="muted">Once every slot is filled, save your team. It's now entered into the round or match.</p></div>
 <div class="card"><span class="badge">STEP 4</span><h3>Real matches happen</h3><p class="muted">As the real fixtures are played, your picked players' real actions (goals, assists, clean sheets) earn points using the scoring table.</p></div>
-<div class="card"><span class="badge">STEP 5</span><h3>Points add up</h3><p class="muted">All 11 players' points are added together automatically to give your total score for the round.</p></div>
+<div class="card"><span class="badge">STEP 5</span><h3>Points add up</h3><p class="muted">All your players' points are added together automatically to give your total score.</p></div>
 <div class="card"><span class="badge">STEP 6</span><h3>Check the leaderboard</h3><p class="muted">See where you rank against everyone else who entered the same round, ordered by total points.</p></div>
 </div>
 
@@ -140,8 +160,53 @@ function home(){return `<section class="hero"><div class="panel"><span class="ba
 function rounds(){return `<div class="section"><h2>Rounds</h2></div><div class="card"><span class="badge">${state.round?.status?.toUpperCase()||"NO OPEN ROUND"}</span>
 <h3>${state.round?.name||"No open round"}</h3><p class="muted">${state.round?"Multiple users can enter this same shared round.":"Create an OPEN round in Supabase first."}</p><button class="primary" onclick="start('league')">Build Team</button></div>`}
 
-function friendly(){return `<div class="section"><h2>Friendly</h2></div><div class="two"><div class="card"><span class="badge">1 VS 1</span><h3>Challenge foundation</h3><p class="muted">The backend contains a challenge table for participant-only access. Full challenge acceptance/settlement comes next.</p><button class="primary" onclick="start('friendly')">Build Team</button></div>
-<div class="card"><h3>Shared competitions</h3><p class="muted">The league model supports many entrants competing in one round.</p></div></div>`}
+let lobbyTimer=null;
+function stopLobbyTimer(){if(lobbyTimer){clearInterval(lobbyTimer);lobbyTimer=null;}}
+
+window.joinFriendlyQueue=async()=>{
+  if(!state.user)return go("auth");
+  await supabase.from("friendly_lobby").insert({user_id:state.user.id,status:"waiting"});
+  state.inQueue=true;render();
+  pollLobby();
+};
+window.leaveFriendlyQueue=async()=>{
+  stopLobbyTimer();
+  await supabase.from("friendly_lobby").update({status:"cancelled"}).eq("user_id",state.user.id).eq("status","waiting");
+  state.inQueue=false;state.queueCount=0;render();
+};
+async function pollLobby(){
+  stopLobbyTimer();
+  lobbyTimer=setInterval(async()=>{
+    if(state.page!=="friendly"||!state.inQueue){stopLobbyTimer();return;}
+    const {count}=await supabase.from("friendly_lobby").select("id",{count:"exact",head:true}).eq("status","waiting");
+    state.queueCount=count||0;
+    await supabase.rpc("try_form_friendly_match");
+    const {data:mine}=await supabase.from("friendly_lobby").select("match_id,status").eq("user_id",state.user.id).order("created_at",{ascending:false}).limit(1);
+    const row=mine?.[0];
+    if(row?.status==="matched"&&row.match_id){
+      stopLobbyTimer();
+      state.inQueue=false;
+      state.friendlyMatchId=row.match_id;
+      const {data:m}=await supabase.from("friendly_matches").select("mode").eq("id",row.match_id).single();
+      state.friendlyMode=m?.mode||"room5";
+      state.mode="friendly";state.selected=[];state.page="builder";state.loadingPlayers=true;render();
+      await syncPlayers();await loadDbPlayers();
+      state.loadingPlayers=false;render();
+      return;
+    }
+    render();
+  },3000);
+}
+
+function friendly(){return `<div class="section"><h2>Friendly</h2></div>
+<div class="two">
+<div class="card"><span class="badge">ROOM OF 5</span><h3>Random matchmaking</h3>
+<p class="muted">Join the queue and you'll be grouped with 4 other waiting players for a 5-a-side points match. If not enough people are around, it automatically falls back to a 1v1 after a short wait — no money involved, points only.</p>
+${state.inQueue?`<p class="notice">Waiting for players… ${state.queueCount||1} in queue right now.</p><button class="secondary" onclick="leaveFriendlyQueue()">Cancel</button>`
+:`<button class="primary" onclick="joinFriendlyQueue()">Find a match</button>`}
+</div>
+<div class="card"><h3>How matching works</h3><p class="muted">The queue checks every few seconds. As soon as 5 people are waiting, a room forms automatically. If only 2 people have been waiting a short while, it becomes a 1v1 instead so nobody waits forever.</p></div>
+</div>`}
 
 let leaderboardTimer=null;
 async function leaderboard(){
@@ -163,9 +228,10 @@ async function leaderboard(){
 function builder(){
  if(state.loadingPlayers) return `<div class="panel"><h3>Syncing the latest players from FPL...</h3><p class="muted">This pulls the current real Premier League player list live.</p></div>`;
  const list=state.dbPlayers.filter(p=>state.filter==="ALL"||p.position===state.filter);
- const slots=["GK",...Array(4).fill("DEF"),...Array(4).fill("MID"),...Array(2).fill("ST")];
+ const need=currentNeed(); const size=teamSize();
+ const slots=["GK",...Array(need.DEF).fill("DEF"),...Array(need.MID).fill("MID"),...Array(need.ST).fill("ST")];
  return `<button class="back" onclick="go('${state.mode==="league"?"rounds":"friendly"}')">← Back</button>
-<div class="section"><h2>Build 4-4-2</h2><span class="badge">${state.selected.length}/11</span></div>
+<div class="section"><h2>Build your ${size}</h2><span class="badge">${state.selected.length}/${size}</span></div>
 <div class="builder"><div class="panel"><h3>Your team</h3><div class="formation">${slots.map(pos=>{const p=state.selected.filter(x=>x.position===pos)[0];return`<div class="slot ${pos==="GK"?"gk":""} ${p?"filled":""}">${p?`<div><b>${p.name}</b><div class="small">${p.club||""}</div></div>`:pos}</div>`}).join("")}</div>
 <button class="primary" style="width:100%;margin-top:12px" onclick="submitTeam()">Save team</button></div>
 <div class="panel"><h3>Players</h3><div class="filters">${["ALL","GK","DEF","MID","ST"].map(f=>`<button class="${state.filter===f?"active":""}" onclick="filter('${f}')">${f}</button>`).join("")}</div>
