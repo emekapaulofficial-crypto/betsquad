@@ -37,19 +37,30 @@ window.addEventListener("unhandledrejection", e=>{
 });
 /* ------------------------------------------ */
 
-/* ---------- BOOT CONFIRMATION BANNER ----------
-   Shows a green banner for a few seconds when app.js has
-   successfully loaded and started running. If you NEVER see
-   this banner on page load, app.js itself failed to load
-   (wrong filename/path, GitHub Pages caching, or a network
-   block) — that's a different problem than a sign-in bug. */
-function showBootBanner(msg, ok){
-  const el = document.createElement("div");
-  el.style.cssText = `position:fixed;top:0;left:0;right:0;z-index:99998;background:${ok?"#1f7a3f":"#c0392b"};color:#fff;padding:8px 14px;font:12px monospace;text-align:center;`;
+/* ---------- ON-PAGE STATUS MESSAGE ----------
+   Some mobile browsers (in-app browsers like WhatsApp/Instagram/
+   Facebook, some PWAs) silently block window.alert(), which made
+   sign-in/sign-up look "dead" even when it worked or failed.
+   This shows a message directly in the page instead, so it is
+   never dependent on native alert() support. */
+function showAuthMessage(msg, type){
+  const el = document.querySelector("#authMsg");
+  if(!el) return alert(msg); // fallback if called from a page without the box
   el.textContent = msg;
-  document.body.prepend(el);
-  if(ok) setTimeout(()=>el.remove(), 4000);
+  el.style.display = "block";
+  el.style.padding = "10px 12px";
+  el.style.borderRadius = "8px";
+  el.style.margin = "10px 0";
+  el.style.fontSize = "14px";
+  if(type==="error"){ el.style.background="#fdecea"; el.style.color="#c0392b"; el.style.border="1px solid #f5b7b1"; }
+  else if(type==="success"){ el.style.background="#eafaf1"; el.style.color="#1e8449"; el.style.border="1px solid #a9dfbf"; }
+  else { el.style.background="#eaf2fb"; el.style.color="#1a5276"; el.style.border="1px solid #aed6f1"; }
 }
+function clearAuthMessage(){
+  const el = document.querySelector("#authMsg");
+  if(el){ el.style.display="none"; el.textContent=""; }
+}
+window.showAuthMessage = showAuthMessage;
 /* ------------------------------------------ */
 
 const leagueNeed={GK:1,DEF:3,MID:2,ST:1};
@@ -133,35 +144,55 @@ window.signOut=async()=>{await supabase.auth.signOut();state.user=null;state.sel
    shows up as an alert AND in the red banner, instead of
    the button silently doing nothing. */
 window.signIn=async()=>{
-  console.log("[signIn] button clicked");
+  const btn=document.querySelector("#signInBtn");
+  if(btn && btn.disabled) return; // guard against double-tap
   try{
+    clearAuthMessage();
     const emailEl=document.querySelector("#email"), passEl=document.querySelector("#password");
-    if(!emailEl||!passEl){ showErrorBanner("Sign-in form fields not found on page."); return; }
+    if(!emailEl||!passEl){ showAuthMessage("Sign-in form fields not found on page.","error"); return; }
     const email=emailEl.value.trim(), password=passEl.value;
-    if(!email||!password){ alert("Enter both email and password."); return; }
-    if(!window.supabase){ showErrorBanner("Supabase client not ready yet. Wait a second and try again."); return; }
+    if(!email||!password){ showAuthMessage("Enter both email and password.","error"); return; }
+    if(btn){ btn.disabled=true; btn.textContent="Signing in..."; }
     const {error}=await supabase.auth.signInWithPassword({email,password});
-    if(error){ alert(error.message); showErrorBanner("Sign in failed: "+error.message); return; }
-    await session(); state.menuOpen=false; state.page="home"; render();
+    if(error){
+      if(/confirm/i.test(error.message)){
+        showAuthMessage("Please confirm your email first — check your inbox (and spam folder) for the confirmation link.","error");
+      } else if(/invalid login/i.test(error.message)){
+        showAuthMessage("Incorrect email or password.","error");
+      } else {
+        showAuthMessage("Sign in failed: "+error.message,"error");
+      }
+      return;
+    }
+    await session(); state.menuOpen=false; showAuthMessage("Signed in.","success"); render();
   }catch(e){
-    showErrorBanner("Sign in crashed: " + e.message);
-    alert("Something went wrong signing in: " + e.message);
+    showAuthMessage("Something went wrong signing in: " + e.message, "error");
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent="Sign in"; }
   }
 };
 window.signUp=async()=>{
-  console.log("[signUp] button clicked");
+  const btn=document.querySelector("#signUpBtn");
+  if(btn && btn.disabled) return; // guard against double-tap
   try{
-    const nameEl=document.querySelector("#name"), emailEl=document.querySelector("#email"), passEl=document.querySelector("#password");
-    if(!nameEl||!emailEl||!passEl){ showErrorBanner("Sign-up form fields not found on page."); return; }
-    const name=nameEl.value.trim(), email=emailEl.value.trim(), password=passEl.value;
-    if(!name||!email||password.length<6)return alert("Enter name, email and a password of at least 6 characters.");
-    if(!window.supabase){ showErrorBanner("Supabase client not ready yet. Wait a second and try again."); return; }
+    clearAuthMessage();
+    const name=document.querySelector("#name").value.trim(), email=document.querySelector("#email").value.trim(), password=document.querySelector("#password").value;
+    if(!name||!email||password.length<6){ showAuthMessage("Enter name, email and a password of at least 6 characters.","error"); return; }
+    if(btn){ btn.disabled=true; btn.textContent="Creating account..."; }
     const {error}=await supabase.auth.signUp({email,password,options:{data:{name}}});
-    if(error){ alert(error.message); showErrorBanner("Sign up failed: "+error.message); return; }
-    alert("Account created. Check your email if confirmation is enabled.");
+    if(error){
+      if(/already registered|already exists|already been registered/i.test(error.message)){
+        showAuthMessage("An account with this email already exists. Try 'Sign in' instead, or use a different email. If you never confirmed this email before, ask an admin to reset it.","error");
+      } else {
+        showAuthMessage("Sign up failed: "+error.message,"error");
+      }
+      return;
+    }
+    showAuthMessage("Account created! Check your email (and spam folder) for a confirmation link before signing in.","success");
   }catch(e){
-    showErrorBanner("Sign up crashed: " + e.message);
-    alert("Something went wrong signing up: " + e.message);
+    showAuthMessage("Something went wrong signing up: " + e.message, "error");
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent="Create account"; }
   }
 };
 window.add=id=>{
@@ -225,8 +256,9 @@ ${state.user?`<button onclick="go('wallet')">Wallet</button><button onclick="loa
 }
 
 function auth(){return `<div class="two"><div class="panel"><span class="badge">ACCOUNT</span><h2>Login / Register</h2>
+<div id="authMsg" class="auth-msg" style="display:none"></div>
 <div class="form"><input id="name" placeholder="Name for registration"><input id="email" type="email" placeholder="Email"><input id="password" type="password" placeholder="Password">
-<div class="actions"><button class="primary" onclick="signUp()">Create account</button><button class="secondary" onclick="signIn()">Sign in</button></div></div></div>
+<div class="actions"><button id="signUpBtn" class="primary" onclick="signUp()">Create account</button><button id="signInBtn" class="secondary" onclick="signIn()">Sign in</button></div></div></div>
 <div class="panel"><h3>Database account</h3><p class="muted">Your submitted team is associated with your authenticated user ID.</p></div></div>`}
 
 function home(){return `<section class="hero"><div class="panel"><span class="badge">REAL FOOTBALL • REAL POINTS</span>
@@ -402,13 +434,11 @@ window.render = render;
 async function boot(){
   try{
     await render();
-    showBootBanner("✓ App loaded successfully (app.js is running)", true);
     await session();
     await loadRound();
     await loadDbPlayers();
     await render();
   }catch(e){
-    showBootBanner("✗ Startup failed — see red banner below", false);
     showErrorBanner("Startup failed: " + e.message);
   }
 }
