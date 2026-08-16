@@ -7,7 +7,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
   3. Replace the two placeholders below.
   4. Never put a service-role/secret key in this file.
 */
-const SUPABASE_URL = "https://YOUR_PROJECT.supabase.co";
+const SUPABASE_URL = "https://sb_publishable_E40QKzlb3dtIoawvmxPHfA_07t2XIxu
 const SUPABASE_PUBLISHABLE_KEY = "YOUR_PUBLISHABLE_KEY";
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 // match_rooms.js and admin_manual_payout.js load as plain (non-module) scripts
