@@ -9,10 +9,11 @@ window.adminState = { isAdmin:false, requests:[], rooms:[], filter:"pending" };
 
 async function checkAdmin(){
   if(!state.user) return false;
-  const q=await supabase.from("admin_users").select("user_id").eq("user_id",state.user.id).maybeSingle();
-  adminState.isAdmin=!!q.data && !q.error;
+  const q=await supabase.from("profiles").select("is_admin").eq("id",state.user.id).maybeSingle();
+  adminState.isAdmin = !!(q.data && q.data.is_admin) && !q.error;
   return adminState.isAdmin;
 }
+
 
 async function loadAdmin(){
   if(!await checkAdmin()) { alert("Admin access required."); return go("home"); }
