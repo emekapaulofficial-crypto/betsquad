@@ -14,12 +14,20 @@ const TEST_PLAYERS = [
   { id: 'smoke-st-1', name: 'Smoke ST', club: 'Coventry City', position: 'ST', photo_url: null }
 ];
 
+async function waitForLogoOverlayToFinish(page) {
+  const overlay = page.locator('#fp-logo-overlay');
+  if (await overlay.count()) {
+    await expect(overlay).toBeHidden({ timeout: 10000 });
+  }
+}
+
 test.describe('FootballPoints public smoke tests', () => {
   test.beforeEach(async ({ page }) => {
     page.on('pageerror', error => console.error('PAGEERROR:', error.message));
     await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 });
     await expect(page.locator('body')).not.toContainText('Script error');
     await expect(page.locator('#app')).not.toBeEmpty();
+    await waitForLogoOverlayToFinish(page);
   });
 
   test('main navigation buttons work', async ({ page }) => {
@@ -27,6 +35,7 @@ test.describe('FootballPoints public smoke tests', () => {
       const button = page.getByRole('button', { name: label, exact: true }).first();
       await expect(button).toBeVisible();
       await button.click();
+      await waitForLogoOverlayToFinish(page);
       await expect(page.locator('body')).not.toContainText('Script error');
       await expect(page.locator('#app')).not.toBeEmpty();
     }
@@ -34,6 +43,7 @@ test.describe('FootballPoints public smoke tests', () => {
 
   test('login/register controls respond', async ({ page }) => {
     await page.getByRole('button', { name: 'Login', exact: true }).first().click();
+    await waitForLogoOverlayToFinish(page);
     await expect(page.locator('#email')).toBeVisible();
     await expect(page.locator('#password')).toBeVisible();
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -44,6 +54,7 @@ test.describe('FootballPoints public smoke tests', () => {
 
   test('matches route and match-detail player selection controls work', async ({ page }) => {
     await page.evaluate(() => window.go('matches'));
+    await waitForLogoOverlayToFinish(page);
     await expect(page.locator('main.wrap')).toBeVisible();
     await expect(page.locator('body')).not.toContainText('Script error');
 
@@ -59,6 +70,7 @@ test.describe('FootballPoints public smoke tests', () => {
       window.openMatch(fixture.id);
     }, TEST_FIXTURE);
 
+    await waitForLogoOverlayToFinish(page);
     await expect(page.locator('text=Players for this match')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('Arsenal', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Coventry City', { exact: true }).first()).toBeVisible();
