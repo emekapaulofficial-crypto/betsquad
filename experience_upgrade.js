@@ -19,6 +19,29 @@
   async function earningsPanel(){const q=await supabase.rpc('admin_earnings_summary');if(q.error)return `<div class="panel"><h3>Earnings</h3><p class="muted">${esc(q.error.message)}</p></div>`;const x=q.data||{},n=v=>Number(v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});return `<div class="panel" id="fpEarningsPanel"><span class="badge">ADMIN EARNINGS</span><h3>Platform earnings</h3><div class="fp-mobile-grid"><div class="card"><b>💰 Platform fees</b><h3>₦${n(x.platform_fees)}</h3></div><div class="card"><b>🏆 Cash prizes paid</b><h3>₦${n(x.cash_prizes_awarded)}</h3></div><div class="card"><b>⬆ Approved deposits</b><h3>₦${n(x.approved_deposits)}</h3></div><div class="card"><b>⬇ Paid withdrawals</b><h3>₦${n(x.paid_withdrawals)}</h3></div><div class="card"><b>Net prize margin</b><h3>₦${n(x.net_prize_margin)}</h3></div><div class="card"><b><span class="fp-diamond">💎</span> Diamonds</b><p class="muted">User reward balance is tracked separately in Wallet.</p></div></div><p class="small muted">Updated ${x.generated_at?new Date(x.generated_at).toLocaleString():'now'}. Earnings shown here are accounting summaries from existing platform fee/prize/deposit/withdrawal records.</p></div>`}
   async function decorateAdmin(){if(state.page!=='admin'||!state.user)return;const ok=await supabase.rpc('is_admin');if(ok.error||!ok.data)return;const main=document.querySelector('main.wrap');if(!main||main.querySelector('#fpEarningsPanel'))return;main.insertAdjacentHTML('beforeend',await earningsPanel())}
   function diamondize(){document.querySelectorAll('main.wrap *').forEach(el=>{if(el.children.length===0&&/Diamonds/.test(el.textContent)&&!el.innerHTML.includes('fp-diamond'))el.innerHTML=el.textContent.replace(/Diamonds/g,'<span class="fp-diamond">💎</span> Diamonds')})}
-  function install(){if(installed)return;if(!window.render||!window.go||!window.supabase||!window.state){setTimeout(install,100);return}installed=true;css();originalRender=window.render;originalGo=window.go;originalSubmitTeam=window.submitTeam;window.go=function(p){if(p==='onevone'){state.page='onevone';state.menuOpen=false;return window.render()}return originalGo(p)};window.render=async function(){const r=await originalRender();addNav();roomButtons().catch(()=>{});decorateAdmin().catch(()=>{});diamondize();decorateMatchDetail().catch(()=>{});return r};window.submitTeam=async function(){const challengeId=state.oneVOneChallengeId;const r=await originalSubmitTeam();if(challengeId&&state.user){const e=await supabase.from('friendly_match_entries').select('id,match_id,user_id,submitted_at').eq('match_id',state.friendlyMatchId).eq('user_id',state.user.id).order('submitted_at',{ascending:false}).limit(1).maybeSingle();if(e.data){const q=await supabase.rpc('link_1v1_entry',{p_challenge_id:challengeId,p_entry_id:e.data.id});if(q.error)console.warn('1v1 entry link:',q.error.message)}state.page='onevone';state.oneVOneChallengeId=null;await window.render()}return r};setTimeout(()=>window.render().catch(()=>{}),200)}
+  async function renderSpecialPage(pageName){
+    const page=pageName==='onevone' ? await onevonePage() : await window.matchDetailPage();
+    const main=document.querySelector('main.wrap');
+    if(main) main.innerHTML=page;
+    addNav();
+    diamondize();
+    if(pageName==='matchDetail')decorateMatchDetail().catch(()=>{});
+  }
+  function install(){if(installed)return;if(!window.render||!window.go||!window.supabase||!window.state){setTimeout(install,100);return}installed=true;css();originalRender=window.render;originalGo=window.go;originalSubmitTeam=window.submitTeam;window.go=function(p){if(p==='onevone'||p==='matchDetail'){state.page=p;state.menuOpen=false;return window.render()}return originalGo(p)};window.render=async function(){
+      if(state.page==='onevone'||state.page==='matchDetail'){
+        // Do NOT call the original app renderer for these additive routes:
+        // the legacy pages map does not contain them and would throw
+        // "pages[state.page] is not a function".
+        await renderSpecialPage(state.page);
+        return;
+      }
+      const r=await originalRender();
+      addNav();
+      roomButtons().catch(()=>{});
+      decorateAdmin().catch(()=>{});
+      diamondize();
+      decorateMatchDetail().catch(()=>{});
+      return r;
+    };window.submitTeam=async function(){const challengeId=state.oneVOneChallengeId;const r=await originalSubmitTeam();if(challengeId&&state.user){const e=await supabase.from('friendly_match_entries').select('id,match_id,user_id,submitted_at').eq('match_id',state.friendlyMatchId).eq('user_id',state.user.id).order('submitted_at',{ascending:false}).limit(1).maybeSingle();if(e.data){const q=await supabase.rpc('link_1v1_entry',{p_challenge_id:challengeId,p_entry_id:e.data.id});if(q.error)console.warn('1v1 entry link:',q.error.message)}state.page='onevone';state.oneVOneChallengeId=null;await window.render()}return r};setTimeout(()=>window.render().catch(()=>{}),200)}
   install();
 })();
