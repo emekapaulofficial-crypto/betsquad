@@ -1,0 +1,37 @@
+name: FootballPoints Finished Match Cleanup Robot
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: footballpoints-finished-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Supabase client
+        run: npm install @supabase/supabase-js
+      - name: Delete finished and cleared fixtures immediately
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { createClient } from '@supabase/supabase-js';
+          const url = process.env.SUPABASE_URL;
+          const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+          if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
+          const sb = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+          const { data, error } = await sb.rpc('cleanup_finished_fixtures');
+          if (error) throw error;
+          console.log(JSON.stringify(data ?? { ok: true }));
+          NODE
