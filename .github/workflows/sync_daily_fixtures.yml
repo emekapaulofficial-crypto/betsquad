@@ -29,10 +29,7 @@ jobs:
           FOOTBALL_LEAGUE_IDS: ${{ vars.FOOTBALL_LEAGUE_IDS || '39,140,2,78,61' }}
           FOOTBALL_SEASON: ${{ vars.FOOTBALL_SEASON || '2026' }}
           FOOTBALL_DAYS_AHEAD: "14"
+          # Keep squad sync off in the daily job to conserve provider quota.
+          # Match-specific player loading uses the existing players table.
           SYNC_SQUADS: "false"
         run: node scripts/footballpoints_sync.mjs
-      - name: Mirror verified data into existing app tables
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/footballpoints_compat.mjs
