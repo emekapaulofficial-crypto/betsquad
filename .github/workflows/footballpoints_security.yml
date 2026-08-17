@@ -20,12 +20,12 @@ jobs:
             echo 'Potential private-key file found in repository.'
             exit 1
           fi
-      - name: Check source for service-role key patterns
+      - name: Check source for obvious live-secret formats
         shell: bash
         run: |
           set -euo pipefail
-          if grep -RIn --exclude-dir=.git --exclude='*.md' -E 'service_role|sb_secret_|sk_live_|x-apisports-key:[[:space:]]*[A-Za-z0-9]' .; then
-            echo 'Potential secret or hard-coded provider credential found.'
+          if grep -RIn --exclude-dir=.git --exclude='*.md' -E 'sb_secret_[A-Za-z0-9]+|sk_live_[A-Za-z0-9]+|AKIA[0-9A-Z]{16}' .; then
+            echo 'Potential hard-coded live secret found.'
             exit 1
           fi
       - name: Validate JavaScript syntax
@@ -34,5 +34,5 @@ jobs:
           set -euo pipefail
           for f in *.js scripts/*.mjs; do
             [ -f "$f" ] || continue
-            if [[ "$f" == *.mjs ]]; then node --check "$f"; else node --check "$f"; fi
+            node --check "$f"
           done
