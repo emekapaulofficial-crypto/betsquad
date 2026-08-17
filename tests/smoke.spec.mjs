@@ -1,6 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 const BASE = process.env.BASE_URL || 'https://betsquad.pages.dev';
+const TEST_FIXTURE = {
+  id: 'accdb633-a2fa-46a1-aa68-f0154e9427eb',
+  home_team: 'Arsenal',
+  away_team: 'Coventry City',
+  kickoff_at: '2026-08-21T19:00:00Z'
+};
 
 test.describe('FootballPoints public smoke tests', () => {
   test.beforeEach(async ({ page }) => {
@@ -30,13 +36,22 @@ test.describe('FootballPoints public smoke tests', () => {
     await expect(page.locator('#authMsg')).toContainText('Enter your name, a valid email');
   });
 
-  test('matches page loads and match-detail player selection controls work', async ({ page }) => {
+  test('matches route and match-detail player selection controls work', async ({ page }) => {
     await page.evaluate(() => window.go('matches'));
     await expect(page.locator('main.wrap')).toBeVisible();
-    await page.waitForFunction(() => Array.isArray(window.state?.fixtures) && window.state.fixtures.length > 0, null, { timeout: 30000 });
-    const fixtureId = await page.evaluate(() => window.state.fixtures[0].id);
-    await page.evaluate(id => window.openMatch(id), fixtureId);
+    await expect(page.locator('body')).not.toContainText('Script error');
+
+    // Use a real fixture already present in the production database. Anonymous
+    // smoke tests cannot rely on the protected upcoming_fixtures view.
+    await page.evaluate(fixture => {
+      window.state.fixtures = [fixture];
+      window.openMatch(fixture.id);
+    }, TEST_FIXTURE);
+
     await expect(page.locator('text=Players for this match')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Arsenal', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Coventry City', { exact: true }).first()).toBeVisible();
+
     const pick = page.getByRole('button', { name: /PICK$/ }).first();
     await expect(pick).toBeVisible({ timeout: 10000 });
     await pick.click();
