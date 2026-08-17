@@ -31,32 +31,46 @@ async function check(attempts = 3) {
 
 async function warn(message) {
   console.error(`ADMIN WARNING: ${message}`);
-  if (!alertUrl) return;
+  if (!alertUrl) return false;
   try {
-    await fetch(alertUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: `FootballPoints admin warning: ${message}` }) });
-  } catch (e) { console.error('Admin webhook failed:', e.message); }
+    const r = await fetch(alertUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: `FootballPoints admin warning: ${message}` }) });
+    return r.ok;
+  } catch (e) { console.error('Admin webhook failed:', e.message); return false; }
 }
 
 async function main() {
+  const startedAt = new Date().toISOString();
   try {
     const result = await check(3);
+    let changed = 0;
     for (const item of result.live) {
-      const f = item.fixture, status = f.status?.short || 'UNK';
-      await sb.from('fp_fixtures').update({
-        status_code: status,
-        status_label: f.status?.long || null,
-        home_score: item.goals?.home ?? null,
-        away_score: item.goals?.away ?? null,
-        last_provider_update: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }).eq('provider_fixture_id', f.id);
+      const f = item.fixture;
+      const status = f?.status?.short || 'UNK';
+      const { data: existing } = await sb.from('fixtures').select('id').eq('provider_fixture_id', String(f.id)).maybeSingle();
+      if (!existing?.id) continue;
+      const { error } = await sb.from('fixtures').update({
+        status,
+        source_updated_at: new Date().toISOString(),
+        last_synced_at: new Date().toISOString()
+      }).eq('id', existing.id);
+      if (error) throw error;
+      changed++;
     }
-    await sb.from('fp_robot_runs').insert({ job_name: 'footballpoints-monitor', ok: true, message: `Live status check: ${result.live.length} matches`, attempts: result.attempts, fixtures_seen: result.live.length, fixtures_changed: result.live.length });
-    console.log(`OK: monitored ${result.live.length} live matches`);
+    await sb.from('football_robot_runs').insert({
+      job_name: 'footballpoints-monitor', provider: 'api-football', started_at: startedAt,
+      finished_at: new Date().toISOString(), success: true, attempt: result.attempts,
+      fixtures_seen: result.live.length, fixtures_changed: changed,
+      error_message: null, admin_warning_sent: false
+    });
+    console.log(`OK: monitored ${result.live.length} live matches; updated ${changed} existing fixtures`);
   } catch (e) {
     const message = String(e.message || e);
-    await sb.from('fp_robot_runs').insert({ job_name: 'footballpoints-monitor', ok: false, message, attempts: 3 });
-    await warn(message);
+    const warned = await warn(message);
+    await sb.from('football_robot_runs').insert({
+      job_name: 'footballpoints-monitor', provider: 'api-football', started_at: startedAt,
+      finished_at: new Date().toISOString(), success: false, attempt: 3,
+      fixtures_seen: 0, fixtures_changed: 0, error_message: message, admin_warning_sent: warned
+    });
     process.exitCode = 1;
   }
 }
