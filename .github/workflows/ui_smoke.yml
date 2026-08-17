@@ -1,0 +1,29 @@
+name: FootballPoints UI Smoke Tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '15 * * * *'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Wait for GitHub Pages deployment
+        if: github.event_name == 'push'
+        run: sleep 60
+      - name: Install Playwright
+        run: npm install --no-save @playwright/test
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run UI smoke tests
+        env:
+          BASE_URL: https://betsquad.pages.dev
+        run: npx playwright test tests/smoke.spec.mjs --reporter=line
