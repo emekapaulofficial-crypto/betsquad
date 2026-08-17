@@ -1,0 +1,31 @@
+name: FootballPoints Robot Monitor
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: footballpoints-robot
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Supabase client
+        run: npm install @supabase/supabase-js
+      - name: Monitor live fixture statuses and retry failures
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FOOTBALL_API_KEY: ${{ secrets.FOOTBALL_API_KEY }}
+          FOOTBALL_API_BASE_URL: https://v3.football.api-sports.io
+          FOOTBALL_LEAGUE_IDS: ${{ vars.FOOTBALL_LEAGUE_IDS || '39,140,2,78,61' }}
+          ADMIN_ALERT_WEBHOOK_URL: ${{ secrets.ADMIN_ALERT_WEBHOOK_URL }}
+        run: node scripts/footballpoints_robot.mjs
