@@ -13,7 +13,6 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error('Missing SUPABA
 if (!FOOTBALL_API_KEY) throw new Error('Missing FOOTBALL_API_KEY');
 
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
-
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function dateOnly(d) { return d.toISOString().slice(0, 10); }
 function mapStatus(s) {
@@ -48,33 +47,42 @@ async function api(path, params = {}, retries = 3) {
 
 async function upsertFixture(item) {
   const f = item.fixture, l = item.league, h = item.teams?.home, a = item.teams?.away;
+  if (!f?.id || !l?.id || !h?.id || !a?.id) throw new Error('Provider returned an incomplete fixture record');
   const status = mapStatus(f.status);
-  const { data: league, error: le } = await sb.from('fp_leagues').upsert({
-    provider: 'api-football', provider_league_id: l.id, name: l.name,
-    country: l.country, logo_url: l.logo, season: l.season, updated_at: new Date().toISOString()
-  }, { onConflict: 'provider,provider_league_id,season' }).select('id').single();
+
+  const { data: league, error: le } = await sb.from('football_leagues').upsert({
+    provider: 'api-football', external_id: String(l.id), name: l.name,
+    country: l.country, logo_url: l.logo, active: true, updated_at: new Date().toISOString()
+  }, { onConflict: 'provider,external_id' }).select('id').single();
   if (le) throw le;
 
-  const teams = [h, a].filter(Boolean);
   const teamIds = {};
-  for (const t of teams) {
-    const { data, error } = await sb.from('fp_teams').upsert({
-      provider: 'api-football', provider_team_id: t.id, name: t.name,
-      logo_url: t.logo, updated_at: new Date().toISOString()
-    }, { onConflict: 'provider,provider_team_id' }).select('id').single();
+  for (const t of [h, a]) {
+    const { data, error } = await sb.from('football_teams').upsert({
+      provider: 'api-football', external_id: String(t.id), league_id: league.id,
+      name: t.name, short_name: t.name, country: l.country, logo_url: t.logo,
+      active: true, updated_at: new Date().toISOString()
+    }, { onConflict: 'provider,external_id' }).select('id').single();
     if (error) throw error;
     teamIds[t.id] = data.id;
   }
 
-  const { data, error } = await sb.from('fp_fixtures').upsert({
-    provider: 'api-football', provider_fixture_id: f.id, league_id: league.id,
-    home_team_id: teamIds[h.id], away_team_id: teamIds[a.id], kickoff_at: f.date,
-    status_code: status.code, status_label: status.label,
-    home_score: item.goals?.home ?? null, away_score: item.goals?.away ?? null,
-    venue: f.venue?.name || null, last_provider_update: new Date().toISOString(), updated_at: new Date().toISOString()
-  }, { onConflict: 'provider_fixture_id' }).select('id').single();
-  if (error) throw error;
-  return { id: data.id, changed: true, homeTeam: h.id, awayTeam: a.id };
+  const fixturePayload = {
+    external_id: `api-football:${f.id}`,
+    provider: 'api-football', provider_fixture_id: String(f.id), league_id: league.id,
+    home_team_id: teamIds[h.id], away_team_id: teamIds[a.id],
+    home_team: h.name, away_team: a.name, kickoff_at: f.date,
+    status: status.code, source_updated_at: new Date().toISOString(), last_synced_at: new Date().toISOString()
+  };
+  const { data: existing } = await sb.from('fixtures').select('id').eq('provider_fixture_id', String(f.id)).maybeSingle();
+  let result;
+  if (existing?.id) {
+    result = await sb.from('fixtures').update(fixturePayload).eq('id', existing.id).select('id').single();
+  } else {
+    result = await sb.from('fixtures').upsert(fixturePayload, { onConflict: 'external_id' }).select('id').single();
+  }
+  if (result.error) throw result.error;
+  return { id: result.data.id, changed: true, homeTeam: h.id, awayTeam: a.id };
 }
 
 async function syncUpcoming() {
@@ -100,17 +108,24 @@ async function syncSquads(teamIds) {
     const players = squad[0]?.players || [];
     const team = squad[0]?.team;
     if (!team) continue;
-    const { data: dbTeam, error: te } = await sb.from('fp_teams').upsert({
-      provider: 'api-football', provider_team_id: team.id, name: team.name, logo_url: team.logo, updated_at: new Date().toISOString()
-    }, { onConflict: 'provider,provider_team_id' }).select('id').single();
+    const { data: dbTeam, error: te } = await sb.from('football_teams').upsert({
+      provider: 'api-football', external_id: String(team.id), name: team.name,
+      short_name: team.name, logo_url: team.logo, active: true, updated_at: new Date().toISOString()
+    }, { onConflict: 'provider,external_id' }).select('id').single();
     if (te) throw te;
     for (const p of players) {
-      const { error } = await sb.from('fp_players').upsert({
-        provider: 'api-football', provider_player_id: p.id, team_id: dbTeam.id,
-        name: p.name, position: p.position || null, number: p.number || null,
-        photo_url: p.photo || null, active: true, updated_at: new Date().toISOString()
-      }, { onConflict: 'provider,provider_player_id,team_id' });
-      if (error) throw error;
+      const externalId = `api-football:${p.id}`;
+      const payload = {
+        external_id: externalId, provider: 'api-football', provider_player_id: String(p.id),
+        team_id: dbTeam.id, name: p.name, real_name: p.name,
+        club: team.name, position: p.position || null, photo_url: p.photo || null,
+        active: true, source_updated_at: new Date().toISOString()
+      };
+      const { data: existing } = await sb.from('players').select('id').eq('external_id', externalId).maybeSingle();
+      const result = existing?.id
+        ? await sb.from('players').update(payload).eq('id', existing.id)
+        : await sb.from('players').upsert(payload, { onConflict: 'external_id' });
+      if (result.error) throw result.error;
     }
     await sleep(250);
   }
@@ -118,13 +133,21 @@ async function syncSquads(teamIds) {
 
 async function main() {
   const started = Date.now();
-  let result;
+  const startedAt = new Date().toISOString();
   try {
-    result = await syncUpcoming();
-    await sb.from('fp_robot_runs').insert({ job_name: 'footballpoints-sync', ok: true, message: 'Real fixture sync completed', attempts: 1, fixtures_seen: result.seen, fixtures_changed: result.changed });
+    const result = await syncUpcoming();
+    await sb.from('football_robot_runs').insert({
+      job_name: 'footballpoints-sync', provider: 'api-football', started_at: startedAt,
+      finished_at: new Date().toISOString(), success: true, attempt: 1,
+      fixtures_seen: result.seen, fixtures_changed: result.changed, error_message: null, admin_warning_sent: false
+    });
     console.log(JSON.stringify({ ok: true, ...result, duration_ms: Date.now() - started }));
   } catch (e) {
-    await sb.from('fp_robot_runs').insert({ job_name: 'footballpoints-sync', ok: false, message: String(e.message || e), attempts: 1 });
+    await sb.from('football_robot_runs').insert({
+      job_name: 'footballpoints-sync', provider: 'api-football', started_at: startedAt,
+      finished_at: new Date().toISOString(), success: false, attempt: 1,
+      fixtures_seen: 0, fixtures_changed: 0, error_message: String(e.message || e), admin_warning_sent: false
+    });
     throw e;
   }
 }
