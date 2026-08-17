@@ -1,0 +1,38 @@
+name: FootballPoints Security Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check repository for obvious secret files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find . -type f \( -name '*.pem' -o -name '*.key' -o -name '*service-account*.json' \) -not -path './.git/*' | grep -q .; then
+            echo 'Potential private-key file found in repository.'
+            exit 1
+          fi
+      - name: Check source for service-role key patterns
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RIn --exclude-dir=.git --exclude='*.md' -E 'service_role|sb_secret_|sk_live_|x-apisports-key:[[:space:]]*[A-Za-z0-9]' .; then
+            echo 'Potential secret or hard-coded provider credential found.'
+            exit 1
+          fi
+      - name: Validate JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in *.js scripts/*.mjs; do
+            [ -f "$f" ] || continue
+            if [[ "$f" == *.mjs ]]; then node --check "$f"; else node --check "$f"; fi
+          done
