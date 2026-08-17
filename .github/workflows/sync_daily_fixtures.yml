@@ -1,0 +1,23 @@
+name: Sync today's real fixtures
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync today's real Premier League fixtures
+        env:
+          SUPABASE_URL: https://eavamfsbasjvngeqsyua.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_E40QKzlb3dtIoawvmxPHfA_07t2XIxu
+        run: |
+          set -e
+          curl --fail-with-body --retry 3 --retry-delay 2 \
+            -X POST "$SUPABASE_URL/functions/v1/sync-fixtures" \
+            -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            -H "Content-Type: application/json" \
+            --data '{}'
