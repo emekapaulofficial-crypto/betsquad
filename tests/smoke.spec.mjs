@@ -25,16 +25,15 @@ test.describe('FootballPoints public smoke tests', () => {
     await expect(page.locator('#email')).toBeVisible();
     await expect(page.locator('#password')).toBeVisible();
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(page.locator('#authMsg')).toContainText('Enter both email and password');
+    await expect(page.locator('#authMsg')).toContainText('Enter your email and password');
     await page.getByRole('button', { name: 'Create account', exact: true }).click();
     await expect(page.locator('#authMsg')).toContainText('Enter name, email');
   });
 
   test('matches page loads and match-detail player selection controls work', async ({ page }) => {
-    await page.getByRole('button', { name: 'Home', exact: true }).first().click();
-    const join = page.getByRole('button', { name: 'Join League', exact: true });
-    if (await join.count()) await join.click();
-    else await page.getByRole('button', { name: 'Home', exact: true }).first().click();
+    await page.evaluate(() => window.go('matches'));
+    await expect(page.locator('body')).not.toContainText('Script error');
+    await expect(page.locator('main.wrap')).toBeVisible();
     const matchButton = page.getByRole('button', { name: /View players for this match/i }).first();
     await expect(matchButton).toBeVisible({ timeout: 30000 });
     await matchButton.click();
