@@ -1,0 +1,24 @@
+name: Football Health Monitor
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check fixture system files
+        run: |
+          test -f fixture_reliability.js
+          test -f settle_fixtures.mjs
+          echo "Football system files are present"
+
+      - name: Report status
+        run: |
+          echo "FootballPoints monitor completed"
+          echo "No fake fixtures should be created when data sources fail"
