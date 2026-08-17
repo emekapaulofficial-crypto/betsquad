@@ -1,0 +1,189 @@
+/* FootballPoints mobile + room/1v1 + verified club branding + admin earnings.
+   Additive only: wraps existing functions and preserves existing flows. */
+(function(){
+  const esc=v=>String(v??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
+  let installed=false, originalRender=null, originalGo=null, originalSubmitTeam=null;
+  const logoCache={};
+
+  function css(){
+    if(document.getElementById('fpExperienceCss'))return;
+    const s=document.createElement('style');s.id='fpExperienceCss';s.textContent=`
+      .fp-fixture-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+      .fp-club-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+      .fp-club-logo{width:42px;height:42px;object-fit:contain;border-radius:10px;background:#081525;border:1px solid #28415e;padding:4px}
+      .fp-logo-placeholder{width:42px;height:42px;border-radius:10px;background:#12263e;border:1px solid #28415e;display:flex;align-items:center;justify-content:center;font-size:22px}
+      .fp-diamond{font-size:1.1em;line-height:1;vertical-align:-1px}
+      .fp-mobile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+      @media(max-width:700px){
+        .wrap{width:min(100% - 20px,1100px)!important;padding-bottom:90px}
+        .top{padding:10px 12px!important;position:sticky;top:0;z-index:1000}
+        .brand{font-size:20px!important}
+        .nav{display:none!important}
+        .mobile-menu.open{display:grid!important}
+        .mobile-menu button{min-height:48px;font-size:16px}
+        .hero,.two,.room-grid,.room-actions,.builder{grid-template-columns:1fr!important}
+        .grid,.fp-mobile-grid{grid-template-columns:1fr!important}
+        .section{gap:10px;align-items:flex-start!important;flex-direction:column!important}
+        .section button,.section .primary,.section .secondary{width:100%;min-height:46px}
+        .actions{display:grid!important;grid-template-columns:1fr!important}
+        .actions button,.primary,.secondary{min-height:46px}
+        .row{min-height:52px}
+        input,select,textarea{font-size:16px!important;min-height:46px}
+        .table{font-size:13px}
+      }
+    `;document.head.appendChild(s);
+  }
+
+  async function verifiedLogo(teamName){
+    const key=String(teamName||'').trim(); if(!key)return null;
+    if(Object.prototype.hasOwnProperty.call(logoCache,key))return logoCache[key];
+    try{
+      const {data,error}=await window.supabase.rpc('get_team_brand',{p_team_name:key});
+      if(!error&&data?.[0]?.logo_url){logoCache[key]=data[0].logo_url;return logoCache[key];}
+    }catch(e){}
+    // Exact-name public lookup only; never display a near-match as a club crest.
+    try{
+      const r=await fetch('https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t='+encodeURIComponent(key));
+      const j=await r.json();
+      const exact=(j?.teams||[]).find(t=>String(t.strTeam||'').trim().toLowerCase()===key.toLowerCase());
+      logoCache[key]=exact?.strBadge||null;return logoCache[key];
+    }catch(e){logoCache[key]=null;return null;}
+  }
+
+  async function clubHead(name){
+    const logo=await verifiedLogo(name);
+    return `<div class="fp-club-head">${logo?`<img class="fp-club-logo" src="${esc(logo)}" alt="${esc(name)} crest" loading="lazy">`:`<div class="fp-logo-placeholder" aria-label="No verified logo">⚽</div>`}<div><h3 style="margin:0">${esc(name)}</h3><div class="small muted">Verified club branding only</div></div></div>`;
+  }
+
+  async function decorateMatchDetail(){
+    if(state.page!=='matchDetail')return;
+    const panels=[...document.querySelectorAll('main.wrap .two > .panel')];
+    for(const p of panels){
+      const h=p.querySelector('h3'); if(!h)continue;
+      const name=h.textContent.trim();
+      const logo=await verifiedLogo(name);
+      if(logo&&!p.querySelector('.fp-club-logo')){
+        h.insertAdjacentHTML('beforebegin',`<img class="fp-club-logo" src="${esc(logo)}" alt="${esc(name)} crest" loading="lazy">`);
+      }
+    }
+  }
+
+  function addNav(){
+    const nav=document.querySelector('.nav');
+    const mobile=document.querySelector('.mobile-menu');
+    if(nav&&!nav.querySelector('[data-fp-onevone]')){
+      const b=document.createElement('button');b.dataset.fpOnevone='1';b.textContent='1v1';b.className=state.page==='onevone'?'active':'';b.onclick=()=>go('onevone');nav.insertBefore(b,nav.lastElementChild);
+    }
+    if(mobile&&!mobile.querySelector('[data-fp-onevone]')){
+      const b=document.createElement('button');b.dataset.fpOnevone='1';b.textContent='1v1';b.className=state.page==='onevone'?'active':'';b.onclick=()=>go('onevone');mobile.insertBefore(b,mobile.lastElementChild||null);
+    }
+  }
+
+  async function roomButtons(){
+    if(state.page!=='rooms'&&state.page!=='room')return;
+    const cards=document.querySelectorAll('.fixture-card');
+    for(const card of cards){
+      if(card.querySelector('.fp-room-pick'))continue;
+      const text=card.textContent||'';
+      const f=(state.room?.id&&roomState.fixtures||[]).map(x=>x.fixtures).find(x=>text.includes(x?.home_team||'')&&text.includes(x?.away_team||''));
+      if(!f)continue;
+      const box=document.createElement('div');box.className='fp-fixture-actions';
+      const pick=document.createElement('button');pick.className='secondary fp-room-pick';pick.textContent='Pick players';pick.onclick=()=>openMatch(f.id);
+      box.appendChild(pick);card.appendChild(box);
+      const heads=card.querySelectorAll('b');
+      for(const h of heads){if(h.textContent.includes(' vs ')){const parts=h.textContent.split(' vs ');if(parts.length===2){h.innerHTML=`${await clubHead(parts[0])}<span class="muted">vs</span>${await clubHead(parts[1])}`;}}}
+    }
+    document.querySelectorAll('.room-actions .panel-inner .check').forEach(label=>{
+      if(label.querySelector('.fp-check-logo'))return;
+      const m=label.textContent.match(/^\s*([^v]+)\s+vs\s+(.+)$/);if(!m)return;
+    });
+  }
+
+  async function onevonePage(){
+    if(!state.user)return `<div class="panel"><span class="badge">1v1</span><h2>Head-to-head</h2><p class="muted">Sign in to challenge another FootballPoints player.</p><button class="primary" onclick="go('auth')">Sign in</button></div>`;
+    const [fres,pres,chall]=await Promise.all([
+      supabase.from('fixtures').select('id,home_team,away_team,kickoff_at,status').eq('status','scheduled').gt('kickoff_at',new Date().toISOString()).order('kickoff_at').limit(20),
+      supabase.from('profiles').select('id,display_name,bet_name').neq('id',state.user.id).order('display_name').limit(100),
+      supabase.from('friendly_challenges').select('id,fixture_id,challenger_id,opponent_id,status,match_id,created_at,fixtures(home_team,away_team,kickoff_at),challenger:profiles!friendly_challenges_challenger_id_fkey(display_name,bet_name),opponent:profiles!friendly_challenges_opponent_id_fkey(display_name,bet_name)').or(`challenger_id.eq.${state.user.id},opponent_id.eq.${state.user.id}`).order('created_at',{ascending:false}).limit(30)
+    ]);
+    const fixtures=fres.data||[], users=pres.data||[], challenges=chall.data||[];
+    const fixtureOptions=fixtures.map(f=>`<option value="${esc(f.id)}">${esc(f.home_team)} vs ${esc(f.away_team)} — ${new Date(f.kickoff_at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</option>`).join('');
+    const userOptions=users.map(u=>`<option value="${esc(u.id)}">${esc(u.bet_name||u.display_name||'Player')}</option>`).join('');
+    const cards=challenges.map(c=>{
+      const isOpp=String(c.opponent_id)===String(state.user.id),mine=String(c.challenger_id)===String(state.user.id);
+      const name=isOpp?(c.challenger?.bet_name||c.challenger?.display_name||'Player'):(c.opponent?.bet_name||c.opponent?.display_name||'Player');
+      const f=c.fixtures;const pick=c.status==='accepted'||mine;
+      return `<div class="card"><span class="badge">${esc(c.status.toUpperCase())}</span><h3>vs ${esc(name)}</h3><p class="muted">${esc(f?.home_team||'')} vs ${esc(f?.away_team||'')}<br>${f?.kickoff_at?new Date(f.kickoff_at).toLocaleString():''}</p><div class="fp-fixture-actions">${isOpp&&c.status==='pending'?`<button class="primary" onclick="accept1v1('${c.id}')">Accept 1v1</button>`:''}${pick?`<button class="secondary" onclick="pick1v1('${c.id}')">Pick players</button>`:''}</div></div>`;
+    }).join('');
+    return `<div class="section"><div><span class="badge">1v1</span><h2>Challenge a player</h2><p class="muted" style="margin:0">Choose a real upcoming match, challenge another user, then both players pick their team from that match.</p></div></div>
+      <div class="two"><div class="panel"><h3>Create 1v1</h3><label class="small">Match</label><select id="fp1v1Fixture">${fixtureOptions||'<option>No upcoming matches</option>'}</select><label class="small" style="display:block;margin-top:10px">Opponent</label><select id="fp1v1Opponent">${userOptions||'<option>No other users yet</option>'}</select><button class="primary" style="margin-top:12px;width:100%" onclick="create1v1()" ${fixtureOptions&&userOptions?'':'disabled'}>Create 1v1 challenge</button><p class="muted" style="margin-top:12px">No cash stake is created here. The 1v1 uses real football performance and the existing points/reward system.</p></div><div class="panel"><h3>Your 1v1 challenges</h3>${cards||'<p class="muted">No 1v1 challenges yet.</p>'}</div></div>`;
+  }
+
+  window.create1v1=async function(){
+    const fixture=document.getElementById('fp1v1Fixture')?.value,opponent=document.getElementById('fp1v1Opponent')?.value;
+    if(!fixture||!opponent)return alert('Choose a match and opponent.');
+    const q=await supabase.rpc('create_1v1_challenge',{p_fixture_id:fixture,p_opponent_id:opponent});
+    if(q.error)return alert(q.error.message);alert('1v1 challenge sent.');render();
+  };
+  window.accept1v1=async function(id){const q=await supabase.rpc('accept_1v1_challenge',{p_challenge_id:id});if(q.error)return alert(q.error.message);alert('Challenge accepted. Pick your players now.');await pick1v1(id);};
+  window.pick1v1=async function(id){
+    const q=await supabase.from('friendly_challenges').select('id,fixture_id,match_id,challenger_id,opponent_id,status').eq('id',id).single();
+    if(q.error)return alert(q.error.message);const c=q.data;
+    if(c.status!=='accepted'&&String(c.challenger_id)!==String(state.user.id))return alert('Accept the challenge before picking players.');
+    const f=(await supabase.from('fixtures').select('id,home_team,away_team,kickoff_at,status').eq('id',c.fixture_id).single()).data;
+    if(!f)return alert('Match not found.');
+    state.mode='friendly';state.friendlyMatchId=c.match_id;state.oneVOneChallengeId=c.id;state.selectedFixtures=[f];state.selected=[];state.page='matchDetail';await render();
+  };
+
+  async function earningsPanel(){
+    const q=await supabase.rpc('admin_earnings_summary');
+    if(q.error)return `<div class="panel"><h3>Earnings</h3><p class="muted">${esc(q.error.message)}</p></div>`;
+    const x=q.data||{};const n=v=>Number(v||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    return `<div class="panel" id="fpEarningsPanel"><span class="badge">ADMIN EARNINGS</span><h3>Platform earnings</h3><div class="fp-mobile-grid"><div class="card"><b>💰 Platform fees</b><h3>₦${n(x.platform_fees)}</h3></div><div class="card"><b>🏆 Cash prizes paid</b><h3>₦${n(x.cash_prizes_awarded)}</h3></div><div class="card"><b>⬆ Approved deposits</b><h3>₦${n(x.approved_deposits)}</h3></div><div class="card"><b>⬇ Paid withdrawals</b><h3>₦${n(x.paid_withdrawals)}</h3></div><div class="card"><b>Net prize margin</b><h3>₦${n(x.net_prize_margin)}</h3></div><div class="card"><b><span class="fp-diamond">💎</span> Diamonds</b><p class="muted">User reward balance is tracked separately in Wallet.</p></div></div><p class="small muted">Updated ${x.generated_at?new Date(x.generated_at).toLocaleString():'now'}. Earnings shown here are accounting summaries from existing platform fee/prize/deposit/withdrawal records.</p></div>`;
+  }
+
+  async function decorateAdmin(){
+    if(state.page!=='admin'||!state.user)return;
+    const ok=await supabase.rpc('is_admin');if(ok.error||!ok.data)return;
+    const main=document.querySelector('main.wrap');if(!main||main.querySelector('#fpEarningsPanel'))return;
+    const html=await earningsPanel();main.insertAdjacentHTML('beforeend',html);
+  }
+
+  function diamondize(){
+    document.querySelectorAll('main.wrap *').forEach(el=>{
+      if(el.children.length===0&&/Diamonds/.test(el.textContent)&&!el.innerHTML.includes('fp-diamond')){
+        el.innerHTML=el.textContent.replace(/Diamonds/g,'<span class="fp-diamond">💎</span> Diamonds');
+      }
+    });
+  }
+
+  function decorateRooms(){roomButtons().catch(()=>{});}
+
+  function install(){
+    if(installed)return;
+    if(!window.render||!window.go||!window.supabase||!window.state){setTimeout(install,100);return;}
+    installed=true;css();originalRender=window.render;originalGo=window.go;originalSubmitTeam=window.submitTeam;
+    window.go=function(p){if(p==='onevone'){state.page='onevone';state.menuOpen=false;return window.render();}return originalGo(p);};
+    window.render=async function(){
+      const r=await originalRender();
+      addNav();decorateRooms();decorateAdmin();diamondize();decorateMatchDetail().catch(()=>{});
+      return r;
+    };
+    window.submitTeam=async function(){
+      const challengeId=state.oneVOneChallengeId;
+      const before=state.page;
+      const r=await originalSubmitTeam();
+      if(challengeId&&state.user){
+        const e=await supabase.from('friendly_match_entries').select('id,match_id,user_id,submitted_at').eq('match_id',state.friendlyMatchId).eq('user_id',state.user.id).order('submitted_at',{ascending:false}).limit(1).maybeSingle();
+        if(e.data){
+          const c=await supabase.from('friendly_challenges').select('challenger_id,opponent_id').eq('id',challengeId).single();
+          if(c.data){const col=String(c.data.challenger_id)===String(state.user.id)?'challenger_entry_id':'opponent_entry_id';await supabase.from('friendly_challenges').update({[col]:e.data.id,status:'accepted'}).eq('id',challengeId);}
+        }
+        state.page='onevone';state.oneVOneChallengeId=null;await window.render();
+      }
+      return r;
+    };
+    setTimeout(()=>window.render().catch(()=>{}),200);
+  }
+  install();
+})();
