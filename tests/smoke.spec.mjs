@@ -7,6 +7,12 @@ const TEST_FIXTURE = {
   away_team: 'Coventry City',
   kickoff_at: '2026-08-21T19:00:00Z'
 };
+const TEST_PLAYERS = [
+  { id: 'smoke-gk-1', name: 'Smoke GK', club: 'Arsenal', position: 'GK', photo_url: null },
+  { id: 'smoke-def-1', name: 'Smoke DEF', club: 'Arsenal', position: 'DEF', photo_url: null },
+  { id: 'smoke-mid-1', name: 'Smoke MID', club: 'Arsenal', position: 'MID', photo_url: null },
+  { id: 'smoke-st-1', name: 'Smoke ST', club: 'Coventry City', position: 'ST', photo_url: null }
+];
 
 test.describe('FootballPoints public smoke tests', () => {
   test.beforeEach(async ({ page }) => {
@@ -41,8 +47,13 @@ test.describe('FootballPoints public smoke tests', () => {
     await expect(page.locator('main.wrap')).toBeVisible();
     await expect(page.locator('body')).not.toContainText('Script error');
 
-    // Use a real fixture already present in the production database. Anonymous
-    // smoke tests cannot rely on the protected upcoming_fixtures view.
+    // Use a real fixture already present in production. The player REST request
+    // is stubbed only in this smoke test because anonymous RLS must not expose
+    // the full player table; the UI behavior itself is exercised normally.
+    await page.route('**/rest/v1/players*', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(TEST_PLAYERS) });
+    });
+
     await page.evaluate(fixture => {
       window.state.fixtures = [fixture];
       window.openMatch(fixture.id);
