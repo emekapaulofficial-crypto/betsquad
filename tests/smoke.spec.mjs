@@ -1,0 +1,50 @@
+import { test, expect } from '@playwright/test';
+
+const BASE = process.env.BASE_URL || 'https://betsquad.pages.dev';
+
+test.describe('FootballPoints public smoke tests', () => {
+  test.beforeEach(async ({ page }) => {
+    page.on('pageerror', error => console.error('PAGEERROR:', error.message));
+    await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 });
+    await expect(page.locator('body')).not.toContainText('Script error');
+    await expect(page.locator('#app')).not.toBeEmpty();
+  });
+
+  test('main navigation buttons work', async ({ page }) => {
+    for (const label of ['Home', 'Rooms', 'Rounds', 'Friendly', 'Leaderboard', 'Login']) {
+      const button = page.getByRole('button', { name: label, exact: true }).first();
+      await expect(button).toBeVisible();
+      await button.click();
+      await expect(page.locator('body')).not.toContainText('Script error');
+      await expect(page.locator('#app')).not.toBeEmpty();
+    }
+  });
+
+  test('login/register controls respond', async ({ page }) => {
+    await page.getByRole('button', { name: 'Login', exact: true }).first().click();
+    await expect(page.locator('#email')).toBeVisible();
+    await expect(page.locator('#password')).toBeVisible();
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page.locator('#authMsg')).toContainText('Enter both email and password');
+    await page.getByRole('button', { name: 'Create account', exact: true }).click();
+    await expect(page.locator('#authMsg')).toContainText('Enter name, email');
+  });
+
+  test('matches page loads and match-detail player selection controls work', async ({ page }) => {
+    await page.getByRole('button', { name: 'Home', exact: true }).first().click();
+    const join = page.getByRole('button', { name: 'Join League', exact: true });
+    if (await join.count()) await join.click();
+    else await page.getByRole('button', { name: 'Home', exact: true }).first().click();
+    const matchButton = page.getByRole('button', { name: /View players for this match/i }).first();
+    await expect(matchButton).toBeVisible({ timeout: 30000 });
+    await matchButton.click();
+    await expect(page.locator('text=Players for this match')).toBeVisible();
+    const pick = page.getByRole('button', { name: /PICK$/ }).first();
+    if (await pick.count()) {
+      await pick.click();
+      await expect(page.locator('text=✓ PICKED')).toBeVisible();
+      await page.getByRole('button', { name: /✓ PICKED/ }).first().click();
+    }
+    await expect(page.locator('body')).not.toContainText('Script error');
+  });
+});
