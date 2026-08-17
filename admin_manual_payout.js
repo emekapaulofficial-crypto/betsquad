@@ -1,10 +1,25 @@
 /* Admin Dashboard + manual bank-transfer deposits and payouts */
 window.adminState={isAdmin:false,requests:[],deposits:[],rooms:[]};
 async function checkAdmin(){if(!state.user)return false;const q=await supabase.rpc('is_admin');adminState.isAdmin=!!q.data&&!q.error;return adminState.isAdmin}
-async function loadAdmin(){if(!await checkAdmin()){alert('Admin access required.');return go('home')}
- const q=await supabase.from('withdrawal_requests').select('id,user_id,amount,status,destination,created_at,processed_at,profiles(display_name,email)').order('created_at',{ascending:false}).limit(200);if(q.error)return alert(q.error.message);adminState.requests=q.data||[];
- const d=await supabase.from('deposit_requests').select('id,user_id,amount,method,reference,status,created_at,processed_at,profiles(display_name,email)').order('created_at',{ascending:false}).limit(200);if(d.error)return alert(d.error.message);adminState.deposits=d.data||[];
- const r=await supabase.rpc('admin_room_summary');if(r.error)return alert(r.error.message);adminState.rooms=r.data||[];state.page='admin';render()}
+async function loadAdmin(){
+ if(!await checkAdmin()){alert('Admin access required.');return go('home')}
+ const [q,d,r]=await Promise.all([
+  supabase.from('withdrawal_requests').select('id,user_id,amount,status,destination,created_at,processed_at').order('created_at',{ascending:false}).limit(200),
+  supabase.from('deposit_requests').select('id,user_id,amount,method,reference,status,created_at,processed_at').order('created_at',{ascending:false}).limit(200),
+  supabase.rpc('admin_room_summary')
+ ]);
+ if(q.error)return alert(q.error.message);
+ if(d.error)return alert(d.error.message);
+ if(r.error)return alert(r.error.message);
+ const allIds=[...new Set([...(q.data||[]),...(d.data||[])].map(x=>x.user_id).filter(Boolean))];
+ let profiles=[];
+ if(allIds.length){const p=await supabase.from('profiles').select('id,display_name,email').in('id',allIds);if(p.error)return alert(p.error.message);profiles=p.data||[]}
+ const pm=Object.fromEntries(profiles.map(p=>[p.id,p]));
+ adminState.requests=(q.data||[]).map(x=>({...x,profiles:pm[x.user_id]||null}));
+ adminState.deposits=(d.data||[]).map(x=>({...x,profiles:pm[x.user_id]||null}));
+ adminState.rooms=r.data||[];
+ state.page='admin';render()
+}
 async function approveWithdrawal(id){if(!confirm('Approve this withdrawal request?'))return;const q=await supabase.rpc('admin_approve_withdrawal',{p_request_id:id});if(q.error)return alert(q.error.message);loadAdmin()}
 async function rejectWithdrawal(id){const reason=prompt('Reason for rejection (optional):')||'';const q=await supabase.rpc('admin_reject_withdrawal',{p_request_id:id,p_reason:reason});if(q.error)return alert(q.error.message);loadAdmin()}
 async function markPaid(id){const reference=prompt('Enter your manual transfer/reference number. Only do this AFTER you have sent the money externally:');if(reference===null)return;if(!confirm('Confirm the external bank payment has already been sent?'))return;const q=await supabase.rpc('admin_mark_withdrawal_paid',{p_request_id:id,p_reference:reference});if(q.error)return alert(q.error.message);loadAdmin()}
