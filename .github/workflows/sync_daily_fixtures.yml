@@ -1,37 +1,14 @@
-name: FootballPoints daily real fixture sync
+name: FootballPoints Robot Monitor (Manual Fixtures)
 
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "5 3 * * *"
   workflow_dispatch: {}
 
-concurrency:
-  group: footballpoints-daily-sync
-  cancel-in-progress: false
-
 jobs:
-  sync:
+  manual-mode:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Install Supabase client
-        run: npm install @supabase/supabase-js
-      - name: Sync real fixtures from all configured leagues
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          FOOTBALL_API_KEY: ${{ secrets.FOOTBALL_API_KEY }}
-          FOOTBALL_API_BASE_URL: https://v3.football.api-sports.io
-          FOOTBALL_LEAGUE_IDS: ${{ vars.FOOTBALL_LEAGUE_IDS || '39,140,2,78,61' }}
-          FOOTBALL_SEASON: ${{ vars.FOOTBALL_SEASON || '2026' }}
-          FOOTBALL_DAYS_AHEAD: "14"
-          # Keep squad sync off in the daily job to conserve provider quota.
-          # Match-specific player loading uses the existing players table.
-          SYNC_SQUADS: "false"
-        run: node scripts/footballpoints_sync.mjs
+      - name: Confirm manual fixture mode
+        run: |
+          echo "FootballPoints is using MANUAL fixture management."
+          echo "No football API key is required."
+          echo "Admins add and update real fixtures from the FootballPoints Admin dashboard."
