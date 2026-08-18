@@ -16,9 +16,7 @@ const TEST_PLAYERS = [
 
 async function waitForLogoOverlayToFinish(page) {
   const overlay = page.locator('#fp-logo-overlay');
-  if (await overlay.count()) {
-    await expect(overlay).toBeHidden({ timeout: 10000 });
-  }
+  if (await overlay.count()) await expect(overlay).toBeHidden({ timeout: 10000 });
 }
 
 test.describe('FootballPoints public smoke tests', () => {
@@ -58,16 +56,13 @@ test.describe('FootballPoints public smoke tests', () => {
     await expect(page.locator('main.wrap')).toBeVisible();
     await expect(page.locator('body')).not.toContainText('Script error');
 
-    // Use a real fixture already present in production. The player REST request
-    // is stubbed only in this smoke test because anonymous RLS must not expose
-    // the full player table; the UI behavior itself is exercised normally.
     await page.route('**/rest/v1/players*', async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(TEST_PLAYERS) });
     });
 
-    await page.evaluate(fixture => {
+    await page.evaluate(async fixture => {
       window.state.fixtures = [fixture];
-      window.openMatch(fixture.id);
+      await window.openMatch(fixture.id);
     }, TEST_FIXTURE);
 
     await waitForLogoOverlayToFinish(page);
