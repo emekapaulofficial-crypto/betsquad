@@ -1,7 +1,7 @@
 /* Admin navigation guard.
-   The admin dashboard must never open just because the app renders, auth changes,
-   or another enhancement script runs. It may open only from an explicit Admin click
-   (or while already on the admin page when an admin action refreshes its data).
+   Admin is an additional protected section and must not replace normal user navigation.
+   Prevent unsolicited Admin navigation while also preventing the admin render loop
+   caused by pages.admin() calling loadAdmin() while loadAdmin() itself calls render().
 */
 (function(){
   let tries=0;
@@ -21,7 +21,13 @@
       if(label==="admin")explicit=true;
     },true);
     window.loadAdmin=function(){
-      const allowed=explicit || window.state.page==="admin";
+      if(window.state.page==="admin" && !explicit){
+        // pages.admin() calls loadAdmin() during render. The original loadAdmin()
+        // renders again after setting page=admin, which creates an infinite loop.
+        // Admin data is already loaded by the explicit navigation call.
+        return Promise.resolve(true);
+      }
+      const allowed=explicit;
       explicit=false;
       if(!allowed){
         console.warn("FootballPoints: blocked unsolicited Admin dashboard navigation.");
