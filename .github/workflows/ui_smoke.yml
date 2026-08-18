@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Check room flow JavaScript syntax
+        run: node --check room_social_flow.js
       - name: Wait for GitHub Pages deployment
         if: github.event_name == 'push'
         run: sleep 60
