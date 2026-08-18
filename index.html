@@ -14,7 +14,6 @@
 <script src="match_rooms.js?v=20260817e"></script>
 <script src="room_social_flow.js?v=20260818a"></script>
 <script src="room_auto_transition.js?v=20260818a"></script>
-<script src="whatsapp_home_group.js?v=20260818a"></script>
 <script src="admin_manual_payout.js?v=20260817f"></script>
 <script src="support_referrals.js?v=20260817f"></script>
 <script src="admin_support.js?v=20260817e"></script>
@@ -33,5 +32,7 @@
 <script src="match_document_importer.js?v=20260817a"></script>
 <script src="selection_scoring_upgrade.js?v=20260818a"></script>
 <script src="manual_results_winners_upgrade.js?v=20260818b"></script>
+<!-- Load the WhatsApp home card last so no later UI script can replace its render hook. -->
+<script src="whatsapp_home_group.js?v=20260818b"></script>
 </body>
 </html>
