@@ -1,30 +1,8 @@
-/* Home community invite. Kept separate so it does not change the game logic. */
+/* Persistent Home community invite. */
 (function(){
-  const GROUP_URL="https://chat.whatsapp.com/KiyjdPps1zz92KHiiZv0d0?s=cl&p=a&ilr=1";
-  function install(){
-    if(typeof window.render!=="function"||!window.state)return setTimeout(install,100);
-    if(window.__whatsappHomeInstalled)return;
-    window.__whatsappHomeInstalled=true;
-    const originalRender=window.render;
-    window.render=function(){
-      const result=originalRender.apply(this,arguments);
-      setTimeout(()=>{
-        if(window.state?.page!=="home")return;
-        const app=document.querySelector("#app");
-        if(!app||app.querySelector("#whatsappCommunity"))return;
-        const card=document.createElement("section");
-        card.id="whatsappCommunity";
-        card.className="panel whatsapp-community";
-        card.innerHTML=`<div class="whatsapp-community-inner"><div><span class="badge">FOOTBALLPOINTS COMMUNITY</span><h2>Join our WhatsApp Group</h2><p>Chat with other stakers, plan together, discuss matches and stay connected.</p></div><a class="primary whatsapp-join" href="${GROUP_URL}" target="_blank" rel="noopener noreferrer">JOIN WHATSAPP GROUP →</a></div>`;
-        const main=app.querySelector("main.wrap");
-        const hero=main?.querySelector(".hero");
-        if(hero&&hero.parentNode)hero.parentNode.insertBefore(card,hero.nextSibling);
-        else if(main)main.insertBefore(card,main.firstChild);
-        else app.appendChild(card);
-      },0);
-      return result;
-    };
-    window.render();
-  }
-  install();
+const GROUP_URL='https://chat.whatsapp.com/KiyjdPps1zz92KHiiZv0d0?s=cl&p=a&ilr=1';
+function style(){if(document.getElementById('fp-wa-style'))return;const s=document.createElement('style');s.id='fp-wa-style';s.textContent='.whatsapp-community{margin:0 0 18px!important;border:1px solid #55d98b!important;background:linear-gradient(135deg,#102b26,#0d1b2e)!important;box-shadow:0 8px 28px rgba(0,0,0,.25)!important}.whatsapp-community-inner{display:flex;align-items:center;justify-content:space-between;gap:18px}.whatsapp-community h2{margin:8px 0 5px}.whatsapp-community p{margin:0;color:#b9cbe0}.whatsapp-join{display:inline-flex!important;align-items:center;justify-content:center;white-space:nowrap;text-decoration:none!important;font-size:15px!important}@media(max-width:700px){.whatsapp-community-inner{display:grid;grid-template-columns:1fr}.whatsapp-join{width:100%!important;min-height:48px}}';document.head.appendChild(s)}
+function add(){style();if(window.state?.page!=='home')return;const main=document.querySelector('#app main.wrap');if(!main)return;if(main.querySelector('#whatsappCommunity'))return;const card=document.createElement('section');card.id='whatsappCommunity';card.className='panel whatsapp-community';card.innerHTML='<div class="whatsapp-community-inner"><div><span class="badge">FOOTBALLPOINTS COMMUNITY</span><h2>Join our WhatsApp Group</h2><p>Meet other stakers, chat, plan and discuss matches together.</p></div><a class="primary whatsapp-join" href="'+GROUP_URL+'" target="_blank" rel="noopener noreferrer">JOIN WHATSAPP GROUP →</a></div>';main.insertBefore(card,main.firstElementChild||null)}
+function install(){if(!window.state||typeof window.render!=='function')return setTimeout(install,100);if(window.__fpWaInstalled)return;window.__fpWaInstalled=true;const original=window.render;window.render=function(){const r=original.apply(this,arguments);setTimeout(add,20);setTimeout(add,300);return r};const mo=new MutationObserver(()=>add());mo.observe(document.body,{childList:true,subtree:true});setInterval(add,1000);add()}
+install();
 })();
