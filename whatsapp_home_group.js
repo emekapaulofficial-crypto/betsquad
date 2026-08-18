@@ -15,10 +15,12 @@
         const card=document.createElement("section");
         card.id="whatsappCommunity";
         card.className="panel whatsapp-community";
-        card.innerHTML=`<div><span class="badge">COMMUNITY</span><h2>Join the FootballPoints WhatsApp Group</h2><p class="muted">Meet other stakers, discuss matches, share ideas and stay connected with the FootballPoints community.</p></div><a class="primary whatsapp-join" href="${GROUP_URL}" target="_blank" rel="noopener noreferrer">Join WhatsApp Group</a>`;
-        const how=document.querySelector(".section");
-        if(how&&how.parentNode)how.parentNode.insertBefore(card,how);
-        else app.querySelector("main")?.appendChild(card);
+        card.innerHTML=`<div class="whatsapp-community-inner"><div><span class="badge">FOOTBALLPOINTS COMMUNITY</span><h2>Join our WhatsApp Group</h2><p>Chat with other stakers, plan together, discuss matches and stay connected.</p></div><a class="primary whatsapp-join" href="${GROUP_URL}" target="_blank" rel="noopener noreferrer">JOIN WHATSAPP GROUP →</a></div>`;
+        const main=app.querySelector("main.wrap");
+        const hero=main?.querySelector(".hero");
+        if(hero&&hero.parentNode)hero.parentNode.insertBefore(card,hero.nextSibling);
+        else if(main)main.insertBefore(card,main.firstChild);
+        else app.appendChild(card);
       },0);
       return result;
     };
