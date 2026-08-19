@@ -9,9 +9,14 @@
       await original();
       const R=window.roomFlow;
       if(!R?.fixture)return;
-      if((R.players||[]).length>=6)return;
+      const needed=R.room?.game_mode==='classic11'?11:6;
+      if((R.players||[]).length>=needed)return;
       const clubs=[R.fixture.home_team,R.fixture.away_team].filter(Boolean);
       try{
+        let league='';
+        const fx=await window.supabase.from('upcoming_fixtures').select('league_name').eq('id',R.room.selected_fixture_id).maybeSingle();
+        league=fx.data?.league_name||'';
+        if(league)await window.supabase.functions.invoke('pablo-roster-sync',{body:{league,home_team:R.fixture.home_team,away_team:R.fixture.away_team}});
         const teams=await window.supabase.from('fp_teams').select('id,name,logo_url').in('name',clubs);
         const ids=(teams.data||[]).map(t=>t.id).filter(Boolean);
         if(!ids.length)return;
