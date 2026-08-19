@@ -21,7 +21,7 @@
         try{
           const league=leagueCodeFromFixture(f);
           const teams=await supabase.from("fp_teams").select("name,provider_team_id").in("name",clubs);
-          const map:any={};for(const t of (teams.data||[]))map[String(t.name).toLowerCase()]=t.provider_team_id;
+          const map={};for(const t of (teams.data||[]))map[String(t.name).toLowerCase()]=t.provider_team_id;
           const body={league,home_team:f.home_team,away_team:f.away_team,provider_team_ids:{home:map[String(f.home_team).toLowerCase()],away:map[String(f.away_team).toLowerCase()]}};
           if(league)await supabase.functions.invoke('pablo-roster-sync',{body});
         }catch(e){console.warn('Pablo roster trigger:',e.message)}
