@@ -43,6 +43,7 @@ jobs:
           echo "Store team crest/logo when supplied."
           echo "Use free public football web data; no paid football API subscription is required by this step."
           echo "If a source does not provide a reliable image, leave the image empty and continue."
+          echo "RUN-ON-PUSH TEST: refresh all researched team rosters now."
           node pablo_roster_sync.mjs
 
       - name: Fallback rules for missing players
