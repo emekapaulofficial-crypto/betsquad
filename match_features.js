@@ -1,6 +1,6 @@
 /* FootballPoints match detail + fixture-linked team submission. */
 (function(){
-  function esc(v){return String(v??"").replace(/[&<>\"]/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;"}[s]));}
+  function esc(v){return String(v??"").replace(/[&<>\"]/g,s=>({"&":"&amp;","<":"&lt;","&gt;":"&gt;",'\"':"&quot;"}[s]||s));}
   function fixtureTime(f){if(!f?.kickoff_at)return "Kickoff time: TBD";return new Date(f.kickoff_at).toLocaleString([], {weekday:"long",day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"});}
   function need(){return state.mode==="friendly"?{GK:1,DEF:2,MID:1,ST:1}:{GK:1,DEF:3,MID:2,ST:1};}
   function teamSize(){return Object.values(need()).reduce((a,b)=>a+b,0);}
@@ -16,38 +16,56 @@
     window.toggleMatchPlayer=function(id){
       const p=(state.matchPlayers||[]).find(x=>String(x.id)===String(id));
       if(!p)return;
-      if(isSelected(p.id)){
-        state.selected=state.selected.filter(x=>String(x.id)!==String(p.id));
-        return window.render();
-      }
+      if(isSelected(p.id)){state.selected=state.selected.filter(x=>String(x.id)!==String(p.id));return window.render();}
       const n=need();
       if(!n[p.position])return alert(`This player position (${p.position||"unknown"}) is not used in this team.`);
       if(positionComplete(p.position))return alert(`You already selected the maximum ${n[p.position]} ${p.position} player(s).`);
-      state.selected=[...(state.selected||[]),p];
-      window.render();
+      state.selected=[...(state.selected||[]),p];window.render();
     };
 
     window.submitMatchTeam=async function(){
-      const n=need();
-      const selected=state.selected||[];
+      const n=need(),selected=state.selected||[];
       const complete=Object.keys(n).every(k=>selected.filter(p=>p.position===k).length===n[k]);
       if(!complete)return alert(`Complete your ${teamSize()}-player team first: ${Object.entries(n).map(([k,v])=>`${v} ${k}`).join(", ")}.`);
       await window.submitTeam();
     };
 
+    async function rosterForClubs(clubs){
+      let players=[];
+      const first=await supabase.from("players").select("id,name,club,position,photo_url").eq("active",true).in("club",clubs).order("club").order("name");
+      if(!first.error) players=first.data||[];
+      const found=new Set(players.map(p=>`${String(p.name).toLowerCase()}|${String(p.club).toLowerCase()}`));
+      if(players.length>=teamSize()) return players;
+
+      // Pablo's verified roster store is the fallback when the application players table is empty/incomplete.
+      const teams=await supabase.from("fp_teams").select("id,name,logo_url").in("name",clubs);
+      const teamIds=(teams.data||[]).map(t=>t.id).filter(Boolean);
+      if(!teamIds.length) return players;
+      const second=await supabase.from("fp_players").select("id,name,position,photo_url,team_id,fp_teams(name,logo_url)").eq("active",true).in("team_id",teamIds).order("name");
+      if(second.error) return players;
+      for(const p of (second.data||[])){
+        const club=p.fp_teams?.name||clubs.find(c=>String(c).toLowerCase()===String(p.fp_teams?.name||'').toLowerCase());
+        const key=`${String(p.name).toLowerCase()}|${String(club||'').toLowerCase()}`;
+        if(found.has(key)) continue;
+        players.push({id:p.id,name:p.name,club,position:p.position,photo_url:p.photo_url});found.add(key);
+      }
+      return players;
+    }
+
     window.matchDetailPage=async function(){
       const f=state.selectedFixtures?.[0];if(!f)return `<div class="panel"><p class="muted">No match selected.</p><button class="primary" onclick="go('matches')">Back to matches</button></div>`;
       const clubs=[f.home_team,f.away_team].filter(Boolean);
-      const {data,error}=await supabase.from("players").select("id,name,club,position,photo_url").eq("active",true).in("club",clubs).order("club").order("name");
-      const players=error?[]:(data||[]);state.matchPlayers=players;
-      const byClub={};players.forEach(p=>(byClub[p.club]??=[]).push(p));
-      const n=need();
-      const selected=state.selected||[];
+      const players=await rosterForClubs(clubs);state.matchPlayers=players;
+      const byClub={};players.forEach(p=>{const key=p.club||"Unknown team";(byClub[key]??=[]).push(p);});
+      const n=need(),selected=state.selected||[];
       const selectedByPos=Object.fromEntries(Object.keys(n).map(k=>[k,selected.filter(p=>p.position===k).length]));
       const complete=Object.keys(n).every(k=>selectedByPos[k]===n[k]);
       const selectedHtml=selected.length?`<div class="notice" style="margin-top:16px"><b>Your picks: ${selected.length}/${teamSize()}</b><div style="margin-top:8px">${selected.map(p=>`<span class="badge" style="margin:3px;display:inline-block">${esc(p.name)} · ${esc(p.position)}</span>`).join("")}</div></div>`:`<div class="notice" style="margin-top:16px"><b>Pick your players here</b><br><span class="muted">Tap a player to select them. You need ${teamSize()} players: 1 GK, ${n.DEF} DEF, ${n.MID} MID, ${n.ST} ST.</span></div>`;
-      const clubHtml=clubs.map(club=>`<div class="panel"><h3>${esc(club)}</h3>${(byClub[club]||[]).map(p=>{const picked=isSelected(p.id);const full=!picked&&positionComplete(p.position);return `<button type="button" class="row" style="width:100%;text-align:left;cursor:${full?"not-allowed":"pointer"};opacity:${full&&!picked?".55":"1"};background:${picked?"rgba(80,214,143,.12)":"transparent"};border:1px solid ${picked?"rgba(80,214,143,.55)":"rgba(120,150,190,.25)"};margin-bottom:8px" onclick="toggleMatchPlayer('${esc(p.id)}')" ${full&&!picked?"disabled":""}>${p.photo_url?`<img src="${esc(p.photo_url)}" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;margin-right:10px">`:""}<div style="flex:1"><b>${esc(p.name)}</b><div class="small">${esc(p.position)}</div></div><span class="badge">${picked?"✓ PICKED":full?"FULL":"PICK"}</span></button>`;}).join("")||`<p class="muted">No active players found for this club yet.</p>`}</div>`).join("");
-      return `<button class="back" onclick="go('matches')">← Back to upcoming matches</button><div class="section"><div><span class="badge">MATCH</span><h2>${esc(f.home_team)} vs ${esc(f.away_team)}</h2><p class="muted" style="margin:0">🕒 ${esc(fixtureTime(f))}</p></div><button class="primary" onclick="submitMatchTeam()" ${complete?"":"disabled"} style="opacity:${complete?"1":".6"}">${complete?`Save ${teamSize()} players for this match →`:`Pick ${teamSize()-selected.length} more player(s)`}</button></div>${selectedHtml}<div class="notice"><b>Players for this match</b><br><span class="muted">Only active players from ${esc(f.home_team)} and ${esc(f.away_team)} are shown. Tap <b>PICK</b> to select a player. Your picks are limited to the team formation.</span></div><div class="two" style="margin-top:16px">${clubHtml}</div>`;
+      const clubHtml=clubs.map(club=>{
+        const rows=players.filter(p=>String(p.club||'').toLowerCase()===String(club).toLowerCase());
+        return `<div class="panel"><h3>${esc(club)}</h3>${rows.map(p=>{const picked=isSelected(p.id),full=!picked&&positionComplete(p.position);return `<button type="button" class="row" style="width:100%;text-align:left;cursor:${full?"not-allowed":"pointer"};opacity:${full&&!picked?".55":"1"};background:${picked?"rgba(80,214,143,.12)":"transparent"};border:1px solid ${picked?"rgba(80,214,143,.55)":"rgba(120,150,190,.25)"};margin-bottom:8px" onclick="toggleMatchPlayer('${esc(p.id)}')" ${full&&!picked?"disabled":""}>${p.photo_url?`<img src="${esc(p.photo_url)}" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;margin-right:10px">`:`<span style="display:inline-flex;width:36px;height:36px;border-radius:50%;align-items:center;justify-content:center;background:#16304b;margin-right:10px">⚽</span>`}<div style="flex:1"><b>${esc(p.name)}</b><div class="small">${esc(p.position)}</div></div><span class="badge">${picked?"✓ PICKED":full?"FULL":"PICK"}</span></button>`;}).join('')||`<p class="muted">Pablo has not found a verified roster for this team yet. The robot will retry automatically.</p>`}</div>`;
+      }).join("");
+      return `<button class="back" onclick="go('matches')">← Back to upcoming matches</button><div class="section"><div><span class="badge">MATCH</span><h2>${esc(f.home_team)} vs ${esc(f.away_team)}</h2><p class="muted" style="margin:0">🕒 ${esc(fixtureTime(f))}</p></div><button class="primary" onclick="submitMatchTeam()" ${complete?"":"disabled"} style="opacity:${complete?"1":".6"}">${complete?`Save ${teamSize()} players for this match →`:`Pick ${teamSize()-selected.length} more player(s)`}</button></div>${selectedHtml}<div class="notice"><b>Players for this match</b><br><span class="muted">Pablo's roster database is used automatically when the normal player table is missing data. Only players belonging to these two teams are shown.</span></div><div class="two" style="margin-top:16px">${clubHtml}</div>`;
     };
 
     window.buildTeamForMatch=async function(id){const f=currentFixture(id);if(!f)return alert("Match not found.");state.selectedFixtures=[f];await window.start("league");};
@@ -72,7 +90,7 @@
       if(state.mode!=="league"||!state.user||!fixtureIds.length||state.page!=="leaderboard")return;
       const {data:round}=await supabase.from("rounds").select("id").eq("status","open").order("created_at",{ascending:false}).limit(1).maybeSingle();if(!round?.id)return;
       const {data:entry}=await supabase.from("entries").select("id").eq("round_id",round.id).eq("user_id",state.user.id).order("submitted_at",{ascending:false}).limit(1).maybeSingle();if(!entry?.id)return;
-      await supabase.from("entry_fixtures").upsert(fixtureIds.map(fixture_id=>({entry_id:entry.id,fixture_id})),{onConflict:"entry_id,fixture_id"});
+      await supabase.from("entry_fixtures").upsert(fixtureIds.map(fixture_id=>({entry_id,fixture_id})),{onConflict:"entry_id,fixture_id"});
     };
   }
   init();
