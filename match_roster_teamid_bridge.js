@@ -1,4 +1,4 @@
-/* Match roster recovery: trigger Pablo, then always read the verified roster tables directly. */
+/* Match roster recovery: trigger Pablo, then read the verified provider roster first. */
 (function(){
   'use strict';
   let installed=false;
@@ -20,32 +20,25 @@
     }catch(e){console.warn('Pablo roster trigger failed:',e?.message||e)}
   }
   async function loadVerified(clubs){
-    let players=[];
-    try{
-      const q=await window.supabase.from('players').select('id,name,club,position,photo_url,team_provider_id').eq('active',true).order('club').order('name');
-      if(!q.error)players=q.data||[];
-      players=players.filter(p=>clubs.some(c=>same(p.club,c)));
-    }catch(e){}
+    let players=[]; let teams=[];
     try{
       const t=await window.supabase.from('fp_teams').select('id,name,provider_team_id,logo_url').order('name');
-      const teams=(t.data||[]).filter(x=>clubs.some(c=>same(x.name,c)));
+      teams=(t.data||[]).filter(x=>clubs.some(c=>same(x.name,c)));
       const ids=teams.map(x=>x.id).filter(Boolean);
-      const teamName=new Map(teams.map(x=>[String(x.id),x.name]));
       if(ids.length){
         const q=await window.supabase.from('fp_players').select('id,name,position,photo_url,team_id,number').eq('active',true).in('team_id',ids).order('name');
         if(!q.error){
-          const seen=new Set(players.map(p=>String(p.name).toLowerCase()+'|'+String(p.club).toLowerCase()));
-          for(const p of (q.data||[])){
-            const club=teamName.get(String(p.team_id))||'';
-            const key=String(p.name).toLowerCase()+'|'+club.toLowerCase();
-            if(seen.has(key))continue;
-            players.push({id:p.id,name:p.name,club,position:p.position,photo_url:p.photo_url,number:p.number});
-            seen.add(key);
-          }
+          const teamName=new Map(teams.map(x=>[String(x.id),x.name]));
+          players=(q.data||[]).map(p=>({id:p.id,name:p.name,club:teamName.get(String(p.team_id))||'',position:p.position,photo_url:p.photo_url,number:p.number}));
         }
       }
-      return {players,teams};
-    }catch(e){return {players,teams:[]};}
+      // Legacy players are used only when the verified provider roster is genuinely empty.
+      if(players.length===0){
+        const q=await window.supabase.from('players').select('id,name,club,position,photo_url,team_provider_id').eq('active',true).order('club').order('name');
+        if(!q.error)players=(q.data||[]).filter(p=>clubs.some(c=>same(p.club,c)));
+      }
+    }catch(e){console.warn('Verified roster read failed:',e?.message||e)}
+    return {players,teams};
   }
   function draw(clubs,players,teams){
     const main=document.querySelector('main.wrap');if(!main)return;
@@ -53,7 +46,7 @@
       const panel=[...main.querySelectorAll('.panel')].find(p=>p.querySelector('h3')&&same(p.querySelector('h3').textContent,club));
       if(!panel)continue;
       const rows=players.filter(p=>same(p.club,club));
-      const team=teams.find(t=>same(t.name,club));
+      const team=teams.find(t=>same(t.name,club)&&t.logo_url)||teams.find(t=>same(t.name,club));
       const logo=team?.logo_url?`<img src="${esc(team.logo_url)}" alt="" style="width:34px;height:34px;object-fit:contain;vertical-align:middle;margin-right:8px">`:'';
       const html=`<div style="display:flex;align-items:center;margin-bottom:10px">${logo}<b>${esc(club)}</b><span class="badge" style="margin-left:8px">${rows.length} players</span></div>`+
         (rows.length?rows.map(p=>`<button type="button" class="row" style="width:100%;text-align:left;cursor:pointer;background:transparent;border:1px solid rgba(120,150,190,.25);margin-bottom:8px" onclick="toggleMatchPlayer('${esc(p.id)}')">${p.photo_url?`<img src="${esc(p.photo_url)}" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;margin-right:10px">`:`<span style="display:inline-flex;width:36px;height:36px;border-radius:50%;align-items:center;justify-content:center;background:#16304b;margin-right:10px">⚽</span>`}<div style="flex:1"><b>${esc(p.name)}</b><div class="small">${esc(p.position||'Player')}${p.number?` · #${esc(p.number)}`:''}</div></div><span class="badge">${(window.state.selected||[]).some(x=>String(x.id)===String(p.id))?'✓ PICKED':'PICK'}</span></button>`).join(''):`<p class="muted">Pablo is still syncing the verified roster for this team. Please refresh this match shortly.</p>`);
