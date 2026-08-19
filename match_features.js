@@ -1,6 +1,6 @@
 /* FootballPoints match detail + fixture-linked team submission. */
 (function(){
-  function esc(v){return String(v??"").replace(/[&<>\"]/g,s=>({"&":"&amp;","<":"&lt;","/>":"&gt;",'\"':"&quot;"}[s]||s));}
+  function esc(v){return String(v??"").replace(/[&<>\"]/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;"}[s]||s));}
   function fixtureTime(f){if(!f?.kickoff_at)return "Kickoff time: TBD";return new Date(f.kickoff_at).toLocaleString([], {weekday:"long",day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"});}
   function need(){return state.mode==="friendly"?{GK:1,DEF:2,MID:1,ST:1}:{GK:1,DEF:3,MID:2,ST:1};}
   function teamSize(){return Object.values(need()).reduce((a,b)=>a+b,0);}
@@ -13,21 +13,13 @@
     window.openMatch=async function(id){const f=currentFixture(id);if(!f)return alert("Match not found.");state.selectedFixtures=[f];state.selected=[];state.page="matchDetail";await window.render();};
     window.toggleMatchPlayer=function(id){const p=(state.matchPlayers||[]).find(x=>String(x.id)===String(id));if(!p)return;if(isSelected(p.id)){state.selected=state.selected.filter(x=>String(x.id)!==String(p.id));return window.render();}const n=need();if(!n[p.position])return alert(`This player position (${p.position||"unknown"}) is not used in this team.`);if(positionComplete(p.position))return alert(`You already selected the maximum ${n[p.position]} ${p.position} player(s).`);state.selected=[...(state.selected||[]),p];window.render();};
     window.submitMatchTeam=async function(){const n=need(),selected=state.selected||[];const complete=Object.keys(n).every(k=>selected.filter(p=>p.position===k).length===n[k]);if(!complete)return alert(`Complete your ${teamSize()}-player team first: ${Object.entries(n).map(([k,v])=>`${v} ${k}`).join(", ")}.`);await window.submitTeam();};
-    function leagueCodeFromFixture(f){
-      const raw=String(f?.external_id||"");
-      const m=raw.match(/^espn:([^:]+):/i);
-      return m?.[1]||String(f?.league_name||f?.league||"").trim();
-    }
+    function leagueCodeFromFixture(f){const raw=String(f?.external_id||"");const m=raw.match(/^espn:([^:]+):/i);return m?.[1]||String(f?.league_name||f?.league||"").trim();}
     async function rosterForClubs(clubs,f){
       let players=[];
       const first=await supabase.from("players").select("id,name,club,position,photo_url").eq("active",true).in("club",clubs).order("club").order("name");
       if(!first.error)players=first.data||[];
       if(players.length<teamSize()){
-        // Trigger Pablo immediately. Some fixture views do not expose league_name, so derive the ESPN league code from external_id.
-        try{
-          const league=leagueCodeFromFixture(f);
-          if(league) await supabase.functions.invoke('pablo-roster-sync',{body:{league,home_team:f.home_team,away_team:f.away_team}});
-        }catch(e){console.warn('Pablo roster trigger:',e.message)}
+        try{const league=leagueCodeFromFixture(f);if(league)await supabase.functions.invoke('pablo-roster-sync',{body:{league,home_team:f.home_team,away_team:f.away_team}});}catch(e){console.warn('Pablo roster trigger:',e.message)}
         const refreshed=await supabase.from("players").select("id,name,club,position,photo_url").eq("active",true).in("club",clubs).order("club").order("name");
         if(!refreshed.error&&refreshed.data?.length)players=refreshed.data;
       }
