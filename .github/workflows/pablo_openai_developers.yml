@@ -30,20 +30,29 @@ jobs:
           echo "Keep league identity attached to every fixture so matches from different leagues never get mixed together."
           echo "Process each league independently and continue if one league's data source fails."
 
-      - name: Team and player media rules
+      - name: Team, roster and player media research
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          echo "For every discovered team, collect the official/authorized team crest or logo URL when available."
-          echo "For every discovered player, collect an official/authorized player portrait URL when available."
-          echo "Prefer media URLs supplied by the same trusted football-data provider used for the fixture/player record."
-          echo "Verify that each logo belongs to the correct team and each portrait belongs to the correct player."
-          echo "Store media as URLs/references; do not scrape or copy protected images into the repository."
-          echo "If no reliable image is available, leave the media field empty and continue."
-          echo "Never substitute another team's logo, another player's face, a generated image, or a guessed URL."
+          echo "Pablo roster mission: for each researched fixture, retrieve the two teams' current roster."
+          echo "Store player name, verified position, team, optional shirt number and player face when supplied."
+          echo "Store team crest/logo when supplied."
+          echo "Use free public football web data; no paid football API subscription is required by this step."
+          echo "If a source does not provide a reliable image, leave the image empty and continue."
+          node pablo_roster_sync.mjs
+
+      - name: Fallback rules for missing players
+        run: |
+          echo "If the normal players table has no players for a fixture team, the website must fall back to Pablo's fp_players roster database."
+          echo "Never show an empty player list when a verified roster exists in fp_players."
+          echo "Never invent a player, position, team membership, logo or face."
+          echo "Players must be loaded before kickoff so stakers can select them."
 
       - name: Lineups and points
         run: |
           echo "For every league and fixture, use official starting lineups when published."
-          echo "Collect player points from the trusted data source after points become available."
+          echo "Collect player points from trusted available data after points become available."
           echo "Calculate total points for every staker's selected players across the relevant fixture."
           echo "Rank leaderboard results from highest points to lowest points."
           echo "Do not calculate from invented or missing player statistics."
@@ -52,11 +61,12 @@ jobs:
         run: |
           test -f settle_fixtures.mjs
           test -f fixture_reliability.js
+          test -f pablo_roster_sync.mjs
           echo "Required football files are present"
 
       - name: Finish health check
         run: |
-          echo "Pablo@OpenAI Developers completed multi-league research cycle"
+          echo "Pablo@OpenAI Developers completed multi-league research and roster cycle"
           echo "Next scheduled run is within six hours"
 
       - name: Publish robot health status
@@ -76,7 +86,6 @@ jobs:
               old = {}
 
           now = datetime.now(timezone.utc)
-          # GitHub cron is minute 17 every 6 hours: 00:17, 06:17, 12:17, 18:17 UTC.
           base = now.replace(minute=17, second=0, microsecond=0)
           while base <= now:
               base += timedelta(hours=6)
@@ -87,14 +96,13 @@ jobs:
           old['status'] = 'ONLINE' if success else 'FAILED'
           old['last_run_at'] = now.isoformat()
           old['next_expected_at'] = base.isoformat()
-          old['current_activity'] = ('Research cycle completed; monitoring multiple leagues, fixtures, lineups and points.'
+          old['current_activity'] = ('Researching multiple leagues, fixtures, team rosters, player positions, faces and team logos; preparing data for player selection.'
                                      if success else
-                                     'A research/validation step failed. Check the GitHub Actions run logs.')
-          old['last_error'] = None if success else 'One or more research/validation steps failed; inspect GitHub Actions logs.'
+                                     'A research/roster/validation step failed. Check the GitHub Actions run logs.')
+          old['last_error'] = None if success else 'One or more research/roster/validation steps failed; inspect GitHub Actions logs.'
           if success:
               old['last_success_at'] = now.isoformat()
           path.write_text(json.dumps(old, indent=2) + '\n')
-          PY
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
