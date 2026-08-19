@@ -1,0 +1,38 @@
+name: Pablo@OpenAI Developers
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare Pablo research run
+        run: |
+          echo "Pablo@OpenAI Developers starting"
+          echo "Purpose: research upcoming daily league fixtures, official lineups when published, and player points."
+          echo "The robot must never invent fixtures, lineups, points, or results."
+
+      - name: Validate football data/settlement files
+        run: |
+          test -f settle_fixtures.mjs
+          test -f fixture_reliability.js
+          echo "Required football files are present"
+
+      - name: Record robot responsibilities
+        run: |
+          echo "1. Find upcoming/daily fixtures across configured leagues."
+          echo "2. Record teams and kickoff times from trusted fixture data."
+          echo "3. Use official lineups only after they are published."
+          echo "4. Collect real player points when available."
+          echo "5. Calculate points for staker-selected players."
+          echo "6. Rank leaderboard from highest to lowest points."
+          echo "7. Never create fake data when a source is unavailable."
+
+      - name: Finish health check
+        run: echo "Pablo@OpenAI Developers research cycle completed"
