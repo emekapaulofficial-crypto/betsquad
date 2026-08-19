@@ -107,6 +107,7 @@ jobs:
           if success:
               old['last_success_at'] = now.isoformat()
           path.write_text(json.dumps(old, indent=2) + '\n')
+          PY
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
