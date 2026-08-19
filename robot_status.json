@@ -1,0 +1,9 @@
+{
+  "robot": "Pablo@OpenAI Developers",
+  "status": "UNKNOWN",
+  "last_run_at": null,
+  "last_success_at": null,
+  "next_expected_at": null,
+  "current_activity": "Waiting for the first scheduled research cycle.",
+  "last_error": null
+}
