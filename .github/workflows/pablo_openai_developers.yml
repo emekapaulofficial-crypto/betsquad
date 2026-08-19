@@ -15,8 +15,19 @@ jobs:
       - name: Prepare Pablo research run
         run: |
           echo "Pablo@OpenAI Developers starting"
-          echo "Purpose: research upcoming daily league fixtures, official lineups when published, and player points."
-          echo "The robot must never invent fixtures, lineups, points, or results."
+          echo "Research upcoming daily league fixtures, official lineups and player points."
+          echo "Never invent fixtures, lineups, points, results or media."
+
+      - name: Media research rules
+        run: |
+          echo "For every discovered team, collect the official/authorized team crest or logo URL when available."
+          echo "For every discovered player, collect an official/authorized player portrait URL when available."
+          echo "Prefer media URLs supplied by the same trusted football-data provider used for the fixture/player record."
+          echo "Verify that a logo belongs to the correct team and a portrait belongs to the correct player before storing it."
+          echo "Store media as URLs/references in the database; do not scrape or copy protected images into the repository."
+          echo "If no reliable logo or player face is available, leave the media field empty and continue."
+          echo "Never substitute a different team's logo, a different player's face, a generated image, or a guessed URL."
+          echo "Keep the media linked to stable team/player IDs so later six-hour runs can refresh changed URLs."
 
       - name: Validate football data/settlement files
         run: |
@@ -24,15 +35,17 @@ jobs:
           test -f fixture_reliability.js
           echo "Required football files are present"
 
-      - name: Record robot responsibilities
+      - name: Record Pablo responsibilities
         run: |
           echo "1. Find upcoming/daily fixtures across configured leagues."
           echo "2. Record teams and kickoff times from trusted fixture data."
-          echo "3. Use official lineups only after they are published."
-          echo "4. Collect real player points when available."
-          echo "5. Calculate points for staker-selected players."
-          echo "6. Rank leaderboard from highest to lowest points."
-          echo "7. Never create fake data when a source is unavailable."
+          echo "3. Collect team logos when reliably available."
+          echo "4. Use official lineups when published."
+          echo "5. Collect player faces when reliably available."
+          echo "6. Collect real player points when available."
+          echo "7. Calculate points for staker-selected players."
+          echo "8. Rank leaderboard from highest to lowest points."
+          echo "9. Never create fake data or media when a source is unavailable."
 
       - name: Finish health check
         run: echo "Pablo@OpenAI Developers research cycle completed"
