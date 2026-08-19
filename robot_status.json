@@ -1,9 +1,9 @@
 {
   "robot": "Pablo@OpenAI Developers",
-  "status": "UNKNOWN",
-  "last_run_at": null,
-  "last_success_at": null,
-  "next_expected_at": null,
-  "current_activity": "Waiting for the first scheduled research cycle.",
+  "status": "ONLINE",
+  "last_run_at": "2026-08-19T12:34:13.583733+00:00",
+  "last_success_at": "2026-08-19T12:34:13.583733+00:00",
+  "next_expected_at": "2026-08-19T18:17:00+00:00",
+  "current_activity": "Researching multiple leagues, fixtures, team rosters, player positions, faces and team logos; preparing data for player selection.",
   "last_error": null
 }
