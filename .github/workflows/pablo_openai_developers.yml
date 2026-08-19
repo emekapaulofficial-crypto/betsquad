@@ -5,6 +5,9 @@ on:
     - cron: '17 */6 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   research:
     runs-on: ubuntu-latest
@@ -55,3 +58,46 @@ jobs:
         run: |
           echo "Pablo@OpenAI Developers completed multi-league research cycle"
           echo "Next scheduled run is within six hours"
+
+      - name: Publish robot health status
+        if: always()
+        env:
+          RUN_STATUS: ${{ job.status }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone, timedelta
+          from pathlib import Path
+
+          path = Path('robot_status.json')
+          try:
+              old = json.loads(path.read_text())
+          except Exception:
+              old = {}
+
+          now = datetime.now(timezone.utc)
+          # GitHub cron is minute 17 every 6 hours: 00:17, 06:17, 12:17, 18:17 UTC.
+          base = now.replace(minute=17, second=0, microsecond=0)
+          while base <= now:
+              base += timedelta(hours=6)
+
+          status = os.environ.get('RUN_STATUS', 'failure').lower()
+          success = status == 'success'
+          old['robot'] = 'Pablo@OpenAI Developers'
+          old['status'] = 'ONLINE' if success else 'FAILED'
+          old['last_run_at'] = now.isoformat()
+          old['next_expected_at'] = base.isoformat()
+          old['current_activity'] = ('Research cycle completed; monitoring multiple leagues, fixtures, lineups and points.'
+                                     if success else
+                                     'A research/validation step failed. Check the GitHub Actions run logs.')
+          old['last_error'] = None if success else 'One or more research/validation steps failed; inspect GitHub Actions logs.'
+          if success:
+              old['last_success_at'] = now.isoformat()
+          path.write_text(json.dumps(old, indent=2) + '\n')
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add robot_status.json
+          git diff --cached --quiet || git commit -m "Update Pablo robot health status"
+          git push
