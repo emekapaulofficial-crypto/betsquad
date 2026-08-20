@@ -1,4 +1,4 @@
-/* FootballPoints — Easy Navigation v2
+/* FootballPoints — Easy Navigation v3
  * Mobile-first navigation layer. Uses the existing window.go() router.
  * Does not replace game, wallet, authentication, or settlement logic.
  */
@@ -31,7 +31,7 @@
       #fpEasyNav{left:8px;right:8px;bottom:7px;transform:none;width:auto;justify-content:space-around;border-radius:16px;padding:5px 3px}
       #fpEasyNav button{height:56px}
       #fpQuickNav{left:10px;right:10px;top:auto;bottom:76px;justify-content:center}
-      #fpQuickNav button{flex:1;max-width:190px;min-height:44px}
+      #fpQuickNav button{flex:1;max-width:170px;min-height:44px}
       #fpNavMenu{left:10px;right:10px;top:auto;bottom:140px;width:auto}
     }
   `;
@@ -40,6 +40,7 @@
   function navigate(page) {
     if (page === "wallet" && !window.state?.user) {
       if (typeof window.go === "function") window.go("auth");
+      closeMenu();
       return;
     }
     if (typeof window.go === "function") window.go(page);
@@ -49,6 +50,11 @@
   function closeMenu() {
     const menu = document.getElementById("fpNavMenu");
     if (menu) menu.classList.remove("open");
+  }
+
+  function toggleMenu() {
+    const menu = document.getElementById("fpNavMenu");
+    if (menu) menu.classList.toggle("open");
   }
 
   function renderNav() {
@@ -69,7 +75,7 @@
     if (!quick) {
       quick = document.createElement("div");
       quick.id = "fpQuickNav";
-      quick.innerHTML = '<button data-fp-quick="rooms">Join a Game</button><button class="secondary" data-fp-quick="wallet">My Wallet</button>';
+      quick.innerHTML = '<button data-fp-quick="rooms">Join a Game</button><button class="secondary" data-fp-quick="wallet">My Wallet</button><button class="secondary" id="fpNavMenuToggle" type="button">More</button>';
       document.body.appendChild(quick);
     }
 
@@ -95,6 +101,7 @@
     if (pageButton) navigate(pageButton.dataset.fpPage);
     if (quickButton) navigate(quickButton.dataset.fpQuick);
     if (menuButton) navigate(menuButton.dataset.fpMenu);
+    if (e.target.closest("#fpNavMenuToggle")) toggleMenu();
   });
 
   document.addEventListener("click", e => {
