@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 const BASE = process.env.BASE_URL || 'https://betsquad.pages.dev';
 const TEST_FIXTURE = {
-  id: 'accdb633-a2fa-46a1-aa68-f0154e9427eb',
+  id: 'accdb633-a2fa-46a1- aa68-f0154e9427eb',
   home_team: 'Arsenal',
   away_team: 'Coventry City',
   kickoff_at: '2026-08-21T19:00:00Z'
