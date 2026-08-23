@@ -3,35 +3,13 @@
   const GROUP_URL="https://chat.whatsapp.com/KiyjdPps1zz92KHiiZv0d0?s=cl&p=a&ilr=1";
 
   function install(){
-    if(!window.state||!window.supabase||typeof window.render!=="function"||typeof window.signIn!=="function") return setTimeout(install,100);
+    if(!window.state||!window.supabase||typeof window.render!=="function") return setTimeout(install,100);
     if(window.__finalNavigationFixInstalled)return;
     window.__finalNavigationFixInstalled=true;
 
-    const originalSignIn=window.signIn;
-    window.signIn=async function(){
-      await originalSignIn.apply(this,arguments);
-      if(window.state?.user){
-        window.state.page="home";
-        window.state.menuOpen=false;
-        await window.render();
-      }
-    };
-
-    window.signOut=async function(){
-      try{
-        const {error}=await window.supabase.auth.signOut();
-        if(error)throw error;
-      }catch(e){
-        console.error("Sign out failed:",e);
-        alert("Sign out failed: "+(e?.message||e));
-        return;
-      }
-      window.state.user=null;
-      window.state.selected=[];
-      window.state.menuOpen=false;
-      window.state.page="home";
-      await window.render();
-    };
+    // NOTE: signIn/signUp/signOut are now owned exclusively by auth_fix.js to avoid
+    // a multi-file wrapping race that made sign-in/sign-up unreliable. This file
+    // now only adds the WhatsApp community card after render.
 
     const originalRender=window.render;
     window.render=async function(){
