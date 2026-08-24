@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 const BASE = process.env.BASE_URL || 'https://betsquad.pages.dev';
 const TEST_FIXTURE = {
-  id: 'accdb633-a2fa-46a1- aa68-f0154e9427eb',
+  id: 'accdb633-a2fa-46a1-aa68-f0154e9427eb',
   home_team: 'Arsenal',
   away_team: 'Coventry City',
   kickoff_at: '2026-08-21T19:00:00Z'
@@ -29,7 +29,7 @@ test.describe('FootballPoints public smoke tests', () => {
   });
 
   test('main navigation buttons work', async ({ page }) => {
-    for (const label of ['Home', 'Rooms', 'Rounds', 'Friendly', 'Leaderboard', 'Login']) {
+    for (const label of ['Home', 'Games', 'Rooms', 'Rounds', 'Friendly', 'Leaderboard', 'Login']) {
       const button = page.getByRole('button', { name: label, exact: true }).first();
       await expect(button).toBeVisible();
       await button.click();
@@ -37,6 +37,15 @@ test.describe('FootballPoints public smoke tests', () => {
       await expect(page.locator('body')).not.toContainText('Script error');
       await expect(page.locator('#app')).not.toBeEmpty();
     }
+  });
+
+  test('games hub renders all three games', async ({ page }) => {
+    await page.getByRole('button', { name: 'Games', exact: true }).first().click();
+    await expect(page.getByText('Games', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Whot', { exact: true })).toBeVisible();
+    await expect(page.getByText('Dice', { exact: true })).toBeVisible();
+    await expect(page.getByText('Snooker', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Find a room', exact: true })).toHaveCount(3);
   });
 
   test('login/register controls respond', async ({ page }) => {
