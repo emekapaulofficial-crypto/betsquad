@@ -5,13 +5,14 @@ export function createDeck() {
   const cards = [];
   for (const suit of SUITS) {
     for (let value = 1; value <= 14; value += 1) cards.push({ suit, value });
+    cards.push({ suit, value: 20 }); // one Whot card per suit
   }
   return cards;
 }
 
 export function canPlay(card, topCard, declaredSuit = null) {
   if (!card || !topCard) return false;
-  if (card.value === 20) return true; // Whot card; represented separately by value 20.
+  if (card.value === 20) return true;
   if (declaredSuit && card.suit === declaredSuit) return true;
   return card.suit === topCard.suit || card.value === topCard.value;
 }
