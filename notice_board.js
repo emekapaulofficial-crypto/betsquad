@@ -2,6 +2,7 @@
 (function(){'use strict';
 const sections=[
  ['🏠 Home','Home','Updates, community and announcements.'],
+ ['🎮 Games','Games','Play Whot, Dice or Snooker against other stakers.'],
  ['🚪 Rooms','rooms','Join/create rooms, chat and prepare a group stake.'],
  ['⚔️ 1v1','1v1','Challenge one player, select players and stake.'],
  ['🏆 Rounds','rounds','Choose players for scheduled rounds and check results.'],
