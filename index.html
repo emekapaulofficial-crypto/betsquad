@@ -11,10 +11,11 @@
   <div style="padding:20px">Loading BetSquad...</div>
 </div>
 
-<!-- Core app first: keep startup reliable -->
-<script type="module" src="app.js?v=20260824a"></script>
-
-<!-- Game page after core startup -->
-<script type="module" src="games_page.js?v=20260824c"></script>
+<!-- Room helpers must exist before the core app renders the Rooms page. -->
+<script src="rooms_resume_bridge.js?v=20260825b"></script>
+<!-- Core app -->
+<script type="module" src="app.js?v=20260825b"></script>
+<!-- Game engine/UI -->
+<script type="module" src="games_page.js?v=20260825b"></script>
 </body>
 </html>
