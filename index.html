@@ -11,18 +11,14 @@
 </head>
 <body>
 <div id="app"><div style="padding:20px">Loading BetSquad...</div></div>
-<!-- Safety bridges must exist before inline onclick handlers can run. -->
 <script src="rooms_resume_bridge.js?v=20260825d"></script>
 <script src="admin_bridge.js?v=20260825b"></script>
-<!-- Core app -->
 <script type="module" src="app.js?v=20260825e"></script>
 <script type="module" src="games_page.js?v=20260825e"></script>
-<!-- Physical Whot table/cards and touch interaction. -->
 <script src="game_visuals.js?v=20260825f"></script>
-<script src="whot_physical_card_rules.js?v=20260825f"></script>
-<!-- Voice chat: always mounted so the microphone controls are visible. -->
-<script src="game_voice_chat.js?v=20260825b"></script>
-<!-- Navigation resilience runs after the core app/game hook. -->
+<script src="whot_physical_card_rules.js?v=20260825g"></script>
+<script src="game_chat.js?v=20260825d"></script>
+<script src="game_voice_chat.js?v=20260825c"></script>
 <script src="navigation_resilience.js?v=20260825c"></script>
 </body>
 </html>
