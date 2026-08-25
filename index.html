@@ -7,15 +7,11 @@
 <link rel="stylesheet" href="styles.css?v=20260817n">
 </head>
 <body>
-<div id="app">
-  <div style="padding:20px">Loading BetSquad...</div>
-</div>
-
-<!-- Room helpers must exist before the core app renders the Rooms page. -->
-<script src="rooms_resume_bridge.js?v=20260825b"></script>
-<!-- Core app -->
-<script type="module" src="app.js?v=20260825b"></script>
-<!-- Game engine/UI -->
-<script type="module" src="games_page.js?v=20260825b"></script>
+<div id="app"><div style="padding:20px">Loading BetSquad...</div></div>
+<script src="rooms_resume_bridge.js?v=20260825c"></script>
+<script type="module" src="app.js?v=20260825c"></script>
+<script type="module" src="games_page.js?v=20260825c"></script>
+<!-- Must run after the core app/game hook so it can safely wrap navigation. -->
+<script src="navigation_resilience.js?v=20260825a"></script>
 </body>
 </html>
