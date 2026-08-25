@@ -4,6 +4,7 @@
 (function(){
   const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const gameName=t=>({whot:'🃏 Whot',dice:'🎲 Dice',snooker:'🎱 Snooker'}[t]||t||'Game');
+  let resumeTimer=null;
 
   async function loadMyRooms(){
     const s=window.state, sb=window.supabase;
@@ -28,14 +29,33 @@
   };
 
   window.roomsPage=function(){
-    const s=window.state, rooms=s.myGameRooms||[];
+    const rooms=window.state.myGameRooms||[];
     const resume=rooms.filter(r=>r.status==='active');
     const waiting=rooms.filter(r=>r.status==='waiting');
-    const current=rooms[0];
-    const resumeHtml=resume.length?`<div class="panel" style="border:1px solid #55d98b;margin-bottom:16px"><span class="badge">🎮 GAME IN PROGRESS</span><h2>Resume your game</h2><p class="muted">You can continue the game you left behind. Your stake stays attached to the room.</p>${resume.map(r=>`<div class="row"><div><b>${gameName(r.game_type)}</b><div class="small">Room ${esc(r.id.slice(0,8))} • ₦${Number(r.stake||0).toFixed(0)} stake • ${r.capacity} seats</div></div><button class="primary" onclick="resumeGame('${r.id}')">Resume Game</button></div>`).join('')}</div>`:'';
+    const resumeHtml=resume.length?`<div class="panel" style="border:1px solid #55d98b;margin-bottom:16px"><span class="badge">🎮 GAME IN PROGRESS</span><h2>Resume your game</h2><p class="muted">Continue the game you left behind. Your room and stake remain attached to your account.</p>${resume.map(r=>`<div class="row"><div><b>${gameName(r.game_type)}</b><div class="small">Room ${esc(r.id.slice(0,8))} • ₦${Number(r.stake||0).toFixed(0)} stake • ${r.capacity} seats</div></div><button class="primary" onclick="resumeGame('${r.id}')">Resume Game</button></div>`).join('')}</div>`:'';
     const waitingHtml=waiting.length?`<div class="panel"><span class="badge">WAITING</span><h3>Your unfinished room</h3>${waiting.map(r=>`<div class="row"><div><b>${gameName(r.game_type)}</b><div class="small">Room ${esc(r.id.slice(0,8))} • waiting for players</div></div><button class="primary" onclick="resumeGame('${r.id}')">Continue</button></div>`).join('')}</div>`:'';
-    return `<div class="section"><h2>Rooms</h2><p class="muted">Find your unfinished game and continue exactly where you stopped.</p></div>${resumeHtml}${waitingHtml}${(!resumeHtml&&!waitingHtml)?`<div class="panel"><h3>No unfinished games</h3><p class="muted">You are not currently in a waiting or active game room.</p><button class="primary" onclick="go('games')">Find a game</button></div>`:''}`;
+    return `<div class="section"><h2>Rooms</h2><p class="muted">Your unfinished games appear here so you can resume them instead of being told you are already in a room.</p></div>${resumeHtml}${waitingHtml}${(!resumeHtml&&!waitingHtml)?`<div class="panel"><h3>No unfinished games</h3><p class="muted">You are not currently in a waiting or active game room.</p><button class="primary" onclick="go('games')">Find a game</button></div>`:''}`;
   };
+
+  async function refreshResumedRoom(){
+    const s=window.state,sb=window.supabase;
+    if(!s?.user||!s.gameRoomId||s.page!=='game_room'||!sb)return;
+    const [{data:room,error:re},{data:players,error:pe}]=await Promise.all([
+      sb.from('game_rooms').select('*').eq('id',s.gameRoomId).single(),
+      sb.from('game_room_players').select('*').eq('room_id',s.gameRoomId).order('joined_at',{ascending:true})
+    ]);
+    if(re||pe||!room){clearInterval(resumeTimer);resumeTimer=null;return;}
+    if(!(players||[]).some(p=>p.user_id===s.user.id&&!p.is_bot)){
+      clearInterval(resumeTimer);resumeTimer=null;
+      alert('You are no longer a player in this room.');
+      s.gameRoomId=null;s.gameRoomCache=null;s.page='rooms';
+      await window.prepareRoomsPage();
+      return window.render();
+    }
+    s.gameRoomCache={room,players:players||[]};
+    s.gameRoomPlayers=players||[];
+    if(typeof window.render==='function')await window.render();
+  }
 
   window.resumeGame=async function(roomId){
     const s=window.state,sb=window.supabase;
@@ -57,17 +77,13 @@
       s.gameRoomPlayers=players||[];
       s.gameSettlement=null;
       s.page='game_room';
+      if(resumeTimer)clearInterval(resumeTimer);
+      resumeTimer=setInterval(refreshResumedRoom,2000);
       if(typeof window.render==='function')await window.render();
-      if(typeof window.startGamePolling==='function')window.startGamePolling();
-      /* games_page.js keeps its polling function private, so trigger its public-safe path
-         by dispatching a room resume event; the game page's own polling will take over on reload. */
-      window.dispatchEvent(new CustomEvent('betsquad:resume-room',{detail:{roomId}}));
-      setTimeout(()=>{ if(window.state?.page==='game_room' && window.render) window.render(); },100);
+      await refreshResumedRoom();
     }catch(e){console.error('Resume room failed',e);alert('Could not resume this room: '+(e?.message||e));}
   };
 
-  /* Make app navigation resilient even if a legacy room helper is absent. */
   window.roomLobby=window.roomLobby||function(){return window.roomsPage();};
-  window.prepareRoomsPage=window.prepareRoomsPage;
   window.__betSquadRoomsBridge=true;
 })();
