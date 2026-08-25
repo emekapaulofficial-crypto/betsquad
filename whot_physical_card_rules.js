@@ -19,9 +19,7 @@
     if(!room||room.game_type!=='whot')return;
     document.querySelectorAll('#app .wrap .panel button, #app .wrap .panel [role="button"]').forEach(el=>{
       const text=(el.textContent||'').trim().toLowerCase();
-      if(text.includes('play card')||text.includes('select card')||text.includes('manual card')){
-        el.style.display='none';
-      }
+      if(text.includes('play card')||text.includes('select card')||text.includes('manual card'))el.style.display='none';
     });
   }
 
@@ -29,29 +27,47 @@
     if(window.state?.page!=='game_room')return;
     const room=window.state.gameRoomCache?.room;
     if(!room||room.game_type!=='whot')return;
-    const pid=window.state.user?.id;
-    const hand=room.state?.hands?.[pid]||[];
     document.querySelectorAll('#app .real-board .whot-hand .whot-card').forEach((el,index)=>{
+      if(el.dataset.bsWhotBound==='1')return;
+      el.dataset.bsWhotBound='1';
       el.style.cursor='pointer';
       el.style.touchAction='manipulation';
+      el.style.userSelect='none';
       el.dataset.cardIndex=String(index);
-      el.onclick=async function(ev){
-        ev.preventDefault(); ev.stopPropagation();
-        if(typeof window.playWhotCard!=='function')return;
-        const card=hand[index];
-        if(!card)return;
-        /* The game engine performs the authoritative legality check. */
-        try{ await window.playWhotCard(index); }catch(e){ console.warn('Whot card rejected',e); }
+      const play=async ev=>{
+        ev.preventDefault();
+        ev.stopPropagation();
+        const s=window.state;
+        if(s?.page!=='game_room'||!s.gameRoomId||!s.user)return;
+        if(typeof window.playWhotCard!=='function'){
+          console.error('BetSquad: playWhotCard is not available');
+          return;
+        }
+        /* Always read the latest hand at press time; never use a stale captured hand. */
+        const currentRoom=s.gameRoomCache?.room;
+        const currentPid=s.user.id;
+        const currentHand=currentRoom?.state?.hands?.[currentPid]||[];
+        const cardIndex=Number(el.dataset.cardIndex);
+        if(!Number.isInteger(cardIndex)||!currentHand[cardIndex])return;
+        el.style.transform='translateY(-8px) rotate(0deg)';
+        try{await window.playWhotCard(cardIndex);}catch(e){console.warn('Whot card rejected',e);}
+        finally{setTimeout(()=>{if(document.body.contains(el))el.style.transform='';},180);}
       };
+      el.addEventListener('pointerup',play,{passive:false});
+      el.addEventListener('click',ev=>ev.stopPropagation());
+      el.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){play(ev);}});
+      el.tabIndex=0;
+      el.setAttribute('role','button');
+      el.setAttribute('aria-label',`Play card ${index+1}`);
     });
   }
 
   function install(){
     if(window.state?.page==='game_room'&&window.state.gameRoomCache?.room?.game_type==='whot'){
-      addRules(); hideManualCards(); wirePhysicalCards();
+      addRules();hideManualCards();wirePhysicalCards();
     }
   }
   new MutationObserver(install).observe(document.documentElement,{childList:true,subtree:true});
-  setInterval(install,500);
+  setInterval(install,300);
   install();
 })();
