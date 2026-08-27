@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDeck, canPlay, nextPlayer, SUITS } from '../src/games/whotEngine.js';
-import { rollDice, resolveHighestTotal, createPigState, applyPigRoll, holdPigTurn, getPigTurn } from '../src/games/diceEngine.js';
+import { rollDice, resolveHighestTotal, createDiceState, applyDiceRoll, currentDicePlayer, DICE_ROUNDS } from '../src/games/diceEngine.js';
 import { createSnookerState, scorePot, applyFoul, finishSnooker } from '../src/games/snookerEngine.js';
 
 test('Whot deck contains special Whot cards and valid turn flow', () => {
@@ -13,57 +13,55 @@ test('Whot deck contains special Whot cards and valid turn flow', () => {
 });
 
 test('Dice rolls are in range and highest total resolves', () => {
-  const roll = rollDice(2, 6);
-  assert.equal(roll.values.length, 2);
+  const roll = rollDice(1, 6);
+  assert.equal(roll.values.length, 1);
   assert.ok(roll.values.every(v => v >= 1 && v <= 6));
-  assert.equal(roll.total, roll.values[0] + roll.values[1]);
+  assert.equal(roll.total, roll.values[0]);
   const result = resolveHighestTotal([{ pid: 'a', total: 12 }, { pid: 'b', total: 9 }]);
   assert.equal(result.winners.length, 1);
   assert.equal(result.winners[0].pid, 'a');
 });
 
-test('Pig: safe rolls build temporary turn score and Hold banks it', () => {
-  const state = createPigState(['a', 'b']);
-  assert.equal(getPigTurn(state), 'a');
-  assert.equal(applyPigRoll(state, 'a', [4, 5]).turnScore, 9);
-  assert.equal(applyPigRoll(state, 'a', [2, 6]).turnScore, 17);
-  const held = holdPigTurn(state, 'a');
-  assert.equal(held.event, 'hold');
-  assert.equal(state.scores.a, 17);
-  assert.equal(state.turnScore, 0);
-  assert.equal(getPigTurn(state), 'b');
+test('Dice: two players alternate for four rounds and cumulative total wins', () => {
+  const state = createDiceState(['a', 'b'], DICE_ROUNDS);
+  assert.equal(currentDicePlayer(state), 'a');
+  assert.equal(applyDiceRoll(state, 'a', [4]).event, 'roll');
+  assert.equal(currentDicePlayer(state), 'b');
+  assert.equal(applyDiceRoll(state, 'b', [5]).event, 'roll');
+  assert.equal(applyDiceRoll(state, 'a', [6]).event, 'roll');
+  assert.equal(applyDiceRoll(state, 'b', [2]).event, 'roll');
+  assert.equal(state.totals.a, 10);
+  assert.equal(state.totals.b, 7);
+  assert.equal(state.status, 'playing');
 });
 
-test('Pig: rolling one loses only the current turn points', () => {
-  const state = createPigState(['a', 'b']);
-  state.scores.a = 40;
-  applyPigRoll(state, 'a', [5, 4]);
-  const result = applyPigRoll(state, 'a', [1, 6]);
-  assert.equal(result.event, 'one_rolled');
-  assert.equal(state.scores.a, 40);
-  assert.equal(state.turnScore, 0);
-  assert.equal(getPigTurn(state), 'b');
+test('Dice: each roll must contain exactly one six-sided die', () => {
+  const state = createDiceState(['a', 'b']);
+  assert.throws(() => applyDiceRoll(state, 'a', [2, 4]), /exactly one six-sided die/);
+  assert.throws(() => applyDiceRoll(state, 'a', [7]), /exactly one six-sided die/);
+  assert.throws(() => applyDiceRoll(state, 'b', [3]), /Not this player's turn/);
 });
 
-test('Pig: double ones reset permanent score to zero', () => {
-  const state = createPigState(['a', 'b']);
-  state.scores.a = 80;
-  applyPigRoll(state, 'a', [6, 6]);
-  const result = applyPigRoll(state, 'a', [1, 1]);
-  assert.equal(result.event, 'snake_eyes');
-  assert.equal(state.scores.a, 0);
-  assert.equal(state.turnScore, 0);
-  assert.equal(getPigTurn(state), 'b');
-});
-
-test('Pig: first permanent score reaching 100 wins', () => {
-  const state = createPigState(['a', 'b']);
-  state.scores.a = 95;
-  applyPigRoll(state, 'a', [3, 2]);
-  const result = holdPigTurn(state, 'a');
+test('Dice: fourth round produces a winner from cumulative totals', () => {
+  const state = createDiceState(['a', 'b'], 2);
+  applyDiceRoll(state, 'a', [6]);
+  applyDiceRoll(state, 'b', [2]);
+  applyDiceRoll(state, 'a', [5]);
+  const result = applyDiceRoll(state, 'b', [4]);
   assert.equal(result.event, 'winner');
   assert.equal(result.winner, 'a');
-  assert.equal(state.scores.a, 100);
+  assert.equal(state.totals.a, 11);
+  assert.equal(state.totals.b, 6);
+  assert.equal(state.status, 'finished');
+});
+
+test('Dice: equal cumulative totals produce a tie', () => {
+  const state = createDiceState(['a', 'b'], 1);
+  applyDiceRoll(state, 'a', [4]);
+  const result = applyDiceRoll(state, 'b', [4]);
+  assert.equal(result.event, 'tie');
+  assert.equal(result.winner, null);
+  assert.equal(state.tie, true);
   assert.equal(state.status, 'finished');
 });
 
@@ -73,6 +71,7 @@ test('Snooker scoring, fouls and winner calculation work', () => {
   state.currentPlayerId = 'b';
   applyFoul(state, 'b', 4);
   const result = finishSnooker(state);
-  assert.equal(result.winner, 'b');
-  assert.equal(state.scores.b, 4);
+  assert.equal(result.winner, 'a');
+  assert.equal(state.scores.a, 5);
+  assert.equal(state.scores.b, 0);
 });
